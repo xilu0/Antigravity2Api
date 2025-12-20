@@ -97,7 +97,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Admin API (API key protected inside handler)
-    const adminResp = await handleAdminRoute(req, parsedUrl, { authManager, config, logger: log });
+    const adminResp = await handleAdminRoute(req, parsedUrl, { authManager, upstreamClient, config, logger: log });
     if (adminResp) {
       return await writeResponse(res, adminResp);
     }
@@ -194,6 +194,14 @@ const server = http.createServer(async (req, res) => {
     log("info", "✅ Account added. Starting server...");
   }
 
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      log("error", `⛔ Port ${PORT} is already in use.`);
+      process.exit(1);
+    }
+    log("error", `Server error: ${err.message || err}`);
+  });
+
   server.listen(PORT, HOST, () => {
     log("info", `==================================================`);
     log("info", `🚀 Local API Server running!`);
@@ -212,4 +220,7 @@ const server = http.createServer(async (req, res) => {
       log("info", `ℹ️  To add accounts via CLI: node src/server.js --add`);
     }
   });
-})();
+})().catch((err) => {
+  log("error", `Startup failed: ${err.message || err}`);
+  process.exit(1);
+});

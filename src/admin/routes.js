@@ -9,7 +9,7 @@ function isApiKeyValid(apiKey, config) {
   return config.api_keys.includes(apiKey);
 }
 
-async function handleAdminRoute(req, parsedUrl, { authManager, config, logger } = {}) {
+async function handleAdminRoute(req, parsedUrl, { authManager, upstreamClient, config, logger } = {}) {
   if (!parsedUrl.pathname.startsWith("/admin/api/")) return null;
 
   const apiKey = extractApiKey(req.headers);
@@ -27,6 +27,13 @@ async function handleAdminRoute(req, parsedUrl, { authManager, config, logger } 
 
     if (parsedUrl.pathname === "/admin/api/accounts/reload" && req.method === "POST") {
       const data = await accounts.reloadAccounts(authManager);
+      return jsonResponse(200, { success: true, data });
+    }
+
+    const quotaMatch = parsedUrl.pathname.match(/^\/admin\/api\/accounts\/(.+)\/quota$/);
+    if (quotaMatch && req.method === "GET") {
+      const fileName = decodeURIComponent(quotaMatch[1] || "");
+      const data = await accounts.getAccountQuota(authManager, fileName, upstreamClient);
       return jsonResponse(200, { success: true, data });
     }
 

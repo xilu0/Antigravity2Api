@@ -110,6 +110,17 @@ h2 {
   background: rgba(99, 102, 241, 0.28);
 }
 
+.btn.danger {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.15);
+  color: #ff8080;
+}
+
+.btn.danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ff9999;
+}
+
 .btn.ghost {
   background: transparent;
 }
@@ -201,3 +212,58 @@ code {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 999;
+}
+.modal-overlay.open {
+  display: flex;
+}
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  width: 90%;
+  max-width: 600px;
+  box-shadow: var(--shadow);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+.modal-close {
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: var(--muted);
+}
+.modal-body {
+  overflow-y: auto;
+  flex: 1;
+}
+.loading-spinner {
+  text-align: center;
+  padding: 20px;
+  color: var(--muted);
+}

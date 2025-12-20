@@ -16,6 +16,9 @@
     btnSubmitCallback: $("btnSubmitCallback"),
     accountsBody: $("accountsBody"),
     accountsMeta: $("accountsMeta"),
+    quotaModal: $("quotaModal"),
+    quotaClose: $("quotaClose"),
+    quotaBody: $("quotaBody"),
   };
 
   const state = {
@@ -28,6 +31,27 @@
   function setStatus(text, type = "info") {
     const prefix = type === "error" ? "❌ " : type === "success" ? "✅ " : "ℹ️ ";
     els.keyStatus.textContent = prefix + text;
+  }
+
+  function closeQuotaModal() {
+    els.quotaModal.classList.remove("open");
+  }
+
+  function renderQuotaTable(data) {
+    if (!data || data.length === 0) {
+      els.quotaBody.innerHTML = '<div style="padding: 20px;">未查询到相关模型额度信息。</div>';
+      return;
+    }
+    let html = '<table class="table" style="min-width: 100%;"><thead><tr><th>模型</th><th>剩余</th><th>重置时间</th></tr></thead><tbody>';
+    for (const item of data) {
+      html += `<tr>
+            <td class="mono">${item.model}</td>
+            <td>${item.limit}</td>
+            <td>${item.reset}</td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    els.quotaBody.innerHTML = html;
   }
 
   function loadApiKey() {
@@ -125,8 +149,25 @@
       expTd.textContent = formatExpiry(acc.expiry_date);
 
       const actTd = document.createElement("td");
+      
+      const quotaBtn = document.createElement("button");
+      quotaBtn.className = "btn small";
+      quotaBtn.style.marginRight = "6px";
+      quotaBtn.textContent = "额度";
+      quotaBtn.addEventListener("click", async () => {
+        els.quotaModal.classList.add("open");
+        els.quotaBody.innerHTML = '<div class="loading-spinner">加载中...</div>';
+        try {
+          const res = await apiFetch(`/admin/api/accounts/${encodeURIComponent(acc.file)}/quota`, { method: "GET" });
+          renderQuotaTable(res.data);
+        } catch (e) {
+          els.quotaBody.innerHTML = `<div style="color: #ff6b6b; padding: 20px;">加载失败：${e.message || e}</div>`;
+        }
+      });
+      actTd.appendChild(quotaBtn);
+
       const delBtn = document.createElement("button");
-      delBtn.className = "btn small";
+      delBtn.className = "btn small danger";
       delBtn.textContent = "删除";
       delBtn.addEventListener("click", async () => {
         if (!acc.file) return;
@@ -334,6 +375,10 @@
       });
     }
     window.addEventListener("message", handleOAuthMessage);
+    els.quotaClose.addEventListener("click", closeQuotaModal);
+    els.quotaModal.addEventListener("click", (e) => {
+      if (e.target === els.quotaModal) closeQuotaModal();
+    });
   }
 
   loadApiKey();
