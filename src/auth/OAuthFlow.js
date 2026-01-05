@@ -18,11 +18,11 @@ class OAuthFlow {
 
   log(title, data) {
     if (this.logger) {
-      if (typeof this.logger.log === "function") {
-        return this.logger.log(title, data);
-      }
       if (typeof this.logger === "function") {
         return this.logger(title, data);
+      }
+      if (typeof this.logger.log === "function") {
+        return this.logger.log(title, data);
       }
     }
     if (data !== undefined && data !== null) {

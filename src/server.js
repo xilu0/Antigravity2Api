@@ -88,6 +88,7 @@ function generateRequestId() {
 }
 
 const ANSI_REGEX = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+const ZERO_WIDTH_CODEPOINTS = new Set([0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x2060, 0xfeff]);
 
 function stripAnsi(value = "") {
   return String(value).replace(ANSI_REGEX, "");
@@ -106,9 +107,28 @@ function isFullWidthCodePoint(codePoint = 0) {
     (codePoint >= 0xff00 && codePoint <= 0xff60) ||
     (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
     (codePoint >= 0x1f300 && codePoint <= 0x1f64f) ||
+    (codePoint >= 0x1f650 && codePoint <= 0x1f8ff) ||
     (codePoint >= 0x1f900 && codePoint <= 0x1f9ff) ||
     (codePoint >= 0x20000 && codePoint <= 0x3fffd)
   );
+}
+
+function isCombiningMark(codePoint = 0) {
+  return (
+    (codePoint >= 0x0300 && codePoint <= 0x036f) ||
+    (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
+    (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
+    (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||
+    (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
+    (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
+  );
+}
+
+function getCodePointWidth(codePoint = 0) {
+  if (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)) return 0;
+  if (ZERO_WIDTH_CODEPOINTS.has(codePoint)) return 0;
+  if (isCombiningMark(codePoint)) return 0;
+  return isFullWidthCodePoint(codePoint) ? 2 : 1;
 }
 
 function getDisplayWidth(input = "") {
@@ -117,11 +137,29 @@ function getDisplayWidth(input = "") {
 
   for (const char of [...clean]) {
     const codePoint = char.codePointAt(0);
-    if (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)) continue;
-    width += isFullWidthCodePoint(codePoint) ? 2 : 1;
+    width += getCodePointWidth(codePoint);
   }
 
   return width;
+}
+
+function truncateDisplayWidth(input = "", maxWidth = 40, ellipsis = "...") {
+  const text = stripAnsi(String(input));
+  if (getDisplayWidth(text) <= maxWidth) return text;
+
+  const ellipsisWidth = getDisplayWidth(ellipsis);
+  const targetWidth = Math.max(0, maxWidth - ellipsisWidth);
+
+  let suffixWidth = 0;
+  let suffix = "";
+  for (const char of [...text].reverse()) {
+    const width = getCodePointWidth(char.codePointAt(0));
+    if (suffixWidth + width > targetWidth) break;
+    suffix = char + suffix;
+    suffixWidth += width;
+  }
+
+  return `${ellipsis}${suffix}`;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -345,7 +383,7 @@ const server = http.createServer(async (req, res) => {
     console.log(formatBoxLine(`${Colors.dim}📍 地址:${Colors.reset} http://${HOST}:${PORT}`));
     console.log(formatBoxLine(`${Colors.dim}🔗 Gemini:${Colors.reset} http://${HOST}:${PORT}/v1beta`));
     console.log(formatBoxLine(`${Colors.dim}🔗 Claude:${Colors.reset} http://${HOST}:${PORT}/v1/messages`));
-    const logPath = logger.logFile.length > 40 ? "..." + logger.logFile.slice(-37) : logger.logFile;
+    const logPath = truncateDisplayWidth(logger.logFile, 40);
     console.log(formatBoxLine(`${Colors.dim}📝 日志:${Colors.reset} ${logPath}`));
     console.log(`${Colors.green}${Box.bottomLeft}${separator}${Box.bottomRight}${Colors.reset}\n`);
 
