@@ -862,6 +862,76 @@ function uppercaseSchemaTypes(schema) {
   return normalized;
 }
 
+function estimateBase64BytesLength(b64) {
+  const s = String(b64 || "").trim();
+  if (!s) return 0;
+  let padding = 0;
+  if (s.endsWith("==")) padding = 2;
+  else if (s.endsWith("=")) padding = 1;
+  return Math.max(0, Math.floor((s.length * 3) / 4) - padding);
+}
+
+function extractInlineDataPartsFromClaudeToolResultContent(rawContent) {
+  if (!Array.isArray(rawContent)) {
+    const text =
+      typeof rawContent === "string"
+        ? rawContent
+        : rawContent && typeof rawContent === "object"
+          ? JSON.stringify(rawContent)
+          : String(rawContent || "");
+    return { contentText: text, sanitizedContent: rawContent, inlineParts: [] };
+  }
+
+  const inlineParts = [];
+  const sanitized = [];
+  const textSegments = [];
+
+  for (const block of rawContent) {
+    if (block && typeof block === "object") {
+      if (block.type === "text") {
+        const t = typeof block.text === "string" ? block.text : "";
+        if (t) textSegments.push(t);
+        sanitized.push(block);
+        continue;
+      }
+
+      if (block.type === "image") {
+        const source = block.source && typeof block.source === "object" ? block.source : null;
+        const data = source && typeof source.data === "string" ? source.data : null;
+        const mimeType = source && (source.media_type || source.mediaType) ? (source.media_type || source.mediaType) : "image/png";
+        if (data) {
+          inlineParts.push({ inlineData: { mimeType, data } });
+          const bytesLen = estimateBase64BytesLength(data);
+          const placeholder = `[inline image omitted from JSON (${mimeType}, ~${bytesLen} bytes)]`;
+          textSegments.push(placeholder);
+          sanitized.push({
+            ...block,
+            source: {
+              ...source,
+              data: placeholder,
+            },
+          });
+          continue;
+        }
+      }
+    }
+
+    // Fallback: preserve structure and provide a small textual hint.
+    try {
+      textSegments.push(typeof block === "string" ? block : JSON.stringify(block));
+    } catch (_) {
+      textSegments.push(String(block));
+    }
+    sanitized.push(block);
+  }
+
+  return {
+    contentText: textSegments.join("\n"),
+    sanitizedContent: inlineParts.length > 0 ? sanitized : rawContent,
+    inlineParts,
+  };
+}
+
 /**
  * Claude 模型名映射到 Gemini 模型名
  */
@@ -1143,35 +1213,42 @@ function transformClaudeRequestIn(claudeReq, projectId, options = {}) {
             let funcName = toolIdToName.get(item.tool_use_id) || item.tool_use_id;
             
             const rawContent = item.content;
-            let contentText = rawContent || "";
-            if (Array.isArray(contentText)) {
-              contentText = contentText.map(c => c?.text || JSON.stringify(c)).join("\n");
-            }
+            const extracted = extractInlineDataPartsFromClaudeToolResultContent(rawContent);
+            const contentText = extracted.contentText || "";
             const isError = item.is_error === true;
 
             if (mcpXmlEnabled && isMcpToolName(funcName)) {
               clientContent.parts.push({
                 text: buildMcpToolResultXml(funcName, item.tool_use_id, contentText, {
                   is_error: isError,
-                  content: rawContent,
+                  content: extracted.sanitizedContent,
                 }),
               });
+              if (extracted.inlineParts.length > 0) {
+                clientContent.parts.push(...extracted.inlineParts);
+              }
             } else if (mcpXmlEnabled && funcName === item.tool_use_id) {
               // Best-effort fallback: unknown tool name, but still wrap as MCP result text.
               clientContent.parts.push({
                 text: buildMcpToolResultXml("", item.tool_use_id, contentText, {
                   is_error: isError,
-                  content: rawContent,
+                  content: extracted.sanitizedContent,
                 }),
               });
+              if (extracted.inlineParts.length > 0) {
+                clientContent.parts.push(...extracted.inlineParts);
+              }
             } else {
               clientContent.parts.push({
                 functionResponse: {
                   name: funcName,
-                  response: { result: contentText, is_error: isError, content: rawContent },
+                  response: { result: contentText, is_error: isError, content: extracted.sanitizedContent },
                   id: item.tool_use_id,
                 },
               });
+              if (extracted.inlineParts.length > 0) {
+                clientContent.parts.push(...extracted.inlineParts);
+              }
             }
             sawNonThinkingContent = true;
             previousWasToolResult = true;
