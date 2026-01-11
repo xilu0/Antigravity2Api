@@ -1,5 +1,6 @@
 const { transformClaudeRequestIn, transformClaudeResponseOut, mapClaudeModelToGemini } = require("../transform/claude");
 const { getMcpSwitchModel } = require("../mcp/mcpSwitchFlag");
+const { isMcpXmlEnabled, getMcpToolNames } = require("../mcp/mcpXmlBridge");
 const {
   prepareMcpContext,
   bufferForMcpSwitchAndMaybeRetry,
@@ -248,6 +249,10 @@ class ClaudeApi {
       const transformOutOptions = {};
       if (mcpModel) transformOutOptions.overrideModel = baseModel;
       if (!clientWantsStream && method === "streamGenerateContent") transformOutOptions.forceNonStreaming = true;
+      if (isMcpXmlEnabled()) {
+        const names = getMcpToolNames(requestData?.tools);
+        if (names.length > 0) transformOutOptions.mcpXmlToolNames = names;
+      }
 
       let loggedTransformed = false;
       const response = await this.upstream.callV1Internal(method, {

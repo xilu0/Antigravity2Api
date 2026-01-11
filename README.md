@@ -3,7 +3,7 @@
 本服务将 Antigravity 代理出来，转换为标准的 Claude API 和 Gemini API 接口，
 
 * 完整适配CC
-* WORK-AROUND for MCP
+* MCP XML bridge（mcp__* 工具）
 * function_calling
 * subagent
 * 结构化输出
@@ -20,29 +20,44 @@
 - **Thought Signatures（思考签名）**：按 Gemini 官方规范透传 `thoughtSignature`，在 thinking / 工具调用等场景中确保下一轮请求能原样带回签名，避免 `missing thought_signature` 类校验错误。
 - **工具调用（Tool Use）**：支持 Claude `tool_use` / `tool_result` 与 Gemini `functionCall` / `functionResponse` 的互转，兼容需要工具调用的客户端/工作流。
 
-已知问题：
-在使用MCP时，claude转为antigravity的v1internal接口所使用的gemini格式后，v1internal内部判断当前model是claude，会将request转回claude格式，但是其内部接口又不能使用claude的一些字段，所以MCP会有各种奇奇怪怪的问题，这也是使用原生Antigravity时会出现各种MCP问题的原因。只能看google后续会不会去修Antigravity的MCP，或者你也可以试用下如下WORK-AROUND FOR MCP方案
+**关于MCP**：
+在使用MCP时，claude转为antigravity的v1internal接口所使用的gemini格式后，v1internal内部判断当前model是claude，会将request转回claude格式，但是其内部接口又不能使用claude的一些字段，所以MCP会有各种奇奇怪怪的问题，这也是使用原生Antigravity时会出现各种MCP问题的原因。只能看google后续会不会去修Antigravity的MCP，**或者你也可以试用下如下WORK-AROUND FOR MCP方案**
 
-### WORK-AROUND FOR MCP 折中方案（实验性）
+### WORK-AROUND FOR MCP：XML 方案（推荐）已测试多个MCP使用正常！
 
-虽然 Antigravity 内部的 MCP 兼容性问题无法从外部彻底修复，但本项目提供一个“切换到 Gemini 执行 MCP”的折中方案，避免 Claude 模型直接触发 MCP 导致异常。
+> 仅覆盖 `mcp__*` 工具，用于绕过 Antigravity/v1internal 对 MCP tools 的兼容性问题。
+
+测试结果：
+
+![MCP XML 测试结果](screenshot-20260111-114221.png)
 
 **原理（简述）**
 
-- Claude 段：当检测到请求里存在 `mcp__*` 工具时，会在 system 中注入强提示：**严禁直接调用 MCP 工具**，需要通过输出特殊字符串 `AG2API_SWITCH_TO_MCP_MODEL` 通知服务端切换。
-- 服务端：如果在首轮流式输出中检测到 `AG2API_SWITCH_TO_MCP_MODEL`（或仍然出现 `mcp__*` 的 `tool_use`），会丢弃这次输出并用 `AG2API_SWITCH_TO_MCP_MODEL` 指定的 `gemini-*` 模型重发本轮请求，让 Gemini 来完成 MCP 工具调用。
-- 会话隔离：进入 Gemini（MCP）段后，后续相关 `tool_result` 回合继续路由到该 Gemini 模型；回到 Claude 段时会折叠 MCP 段历史，避免跨模型携带 thought/signature 导致 `Corrupted thought signature` 等报错。
+- 上行：当检测到请求里包含 `mcp__*` tools 且 `AG2API_MCP_XML_ENABLED=true` 时：
+  - 不将 `mcp__*` tools 透传给 v1internal（避免 schema/字段不兼容导致的 400/校验错误）
+  - 在 systemInstruction 注入 XML 协议说明，引导模型用 `<mcp__...>{...}</mcp__...>` 文本表示工具调用
+  - 历史里的 `mcp__* tool_use/tool_result` 也会编码为 XML 文本回传上游
+- 下行：代理从**非思考文本流**中解析上述 XML，并转换为标准 Claude `tool_use`；客户端返回 `tool_result` 后再编码为 `<mcp_tool_result>{...}</mcp_tool_result>` 发回上游。
+
+示例：
+
+```xml
+<mcp__serena__check_onboarding_performed>{}</mcp__serena__check_onboarding_performed>
+```
 
 **使用方法**
 
-1) 在 `.env` 配置 `AG2API_SWITCH_TO_MCP_MODEL`（为空/不配置则完全关闭该功能）：
+1) 在 `.env` 开启：
 
 ```bash
-# 推荐示例（仅示例，必须显式配置才会启用）
-AG2API_SWITCH_TO_MCP_MODEL=gemini-3-flash
+AG2API_MCP_XML_ENABLED=true
 ```
 
-2) 重启服务后，Claude Code/客户端正常使用 `mcp__*` 工具场景即可（触发时服务端会自动切换并重试）。
+2) 重启服务后，Claude Code/客户端正常使用 `mcp__*` 工具场景即可（代理会自动桥接 XML ↔ tool_use/tool_result）。
+
+### （已弃用）MCP Switch 方案：`AG2API_SWITCH_TO_MCP_MODEL`
+
+旧方案通过在首轮流式输出中检测特殊字符串 `AG2API_SWITCH_TO_MCP_MODEL`（或仍然出现 `mcp__* tool_use`）后，切换到指定 `gemini-*` 模型重发本轮请求以执行 MCP；保留兼容但不再推荐，后续可能移除。
 
 > **推荐启动方式**：在项目根目录运行 `npm run start`（或 `node src/server.js`）。本项目会以当前工作目录（`process.cwd()`）定位 `.env`、`auths/`、`log/`；如果你在 `src/` 目录运行，则对应路径会变成 `src/.env`、`src/auths/`、`src/log/`。
 
@@ -82,7 +97,9 @@ AG2API_PROXY_URL=
 AG2API_DEBUG=false
 AG2API_LOG_RETENTION_DAYS=3
 AG2API_RETRY_DELAY_MS=1200
-AG2API_SWITCH_TO_MCP_MODEL=gemini-3-flash
+AG2API_MCP_XML_ENABLED=true
+# Deprecated:
+# AG2API_SWITCH_TO_MCP_MODEL=gemini-3-flash
 AG2API_UPDATE_REPO=znlsl/Antigravity2Api
 ```
 
@@ -96,7 +113,8 @@ AG2API_UPDATE_REPO=znlsl/Antigravity2Api
 - `AG2API_DEBUG`：是否开启 debug（true/false）
 - `AG2API_LOG_RETENTION_DAYS`：日志保留天数（默认 3；设为 0 表示不自动清理）
 - `AG2API_RETRY_DELAY_MS`：网络错误 / 429 重试前的固定等待（毫秒，默认 1200）
-- `AG2API_SWITCH_TO_MCP_MODEL`：MCP 折中方案开关；为空/不配置表示关闭，配置为 `gemini-*`（如 `gemini-3-flash`）表示在检测到 `AG2API_SWITCH_TO_MCP_MODEL` 信号或 `mcp__*` 工具调用时自动切换并重试
+- `AG2API_MCP_XML_ENABLED`：MCP XML 方案开关（仅 `mcp__*`）；开启后不透传 `mcp__* tools` 给 v1internal，改为 XML 协议桥接并在下游还原为 `tool_use/tool_result`
+- `AG2API_SWITCH_TO_MCP_MODEL`：（已弃用）旧的 MCP Switch 方案；为空/不配置表示关闭，配置为 `gemini-*`（如 `gemini-3-flash`）表示在检测到 `AG2API_SWITCH_TO_MCP_MODEL` 信号或 `mcp__* tool_use` 时自动切换并重试
 - `AG2API_UPDATE_REPO`：管理界面版本检查的 GitHub 仓库（默认 `znlsl/Antigravity2Api`，用于获取 latest release）
 
 Google OAuth Client（可选覆盖）：

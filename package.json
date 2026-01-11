@@ -1,6 +1,6 @@
 {
   "name": "antigravity2api",
-  "version": "2026.1.10-t150000",
+  "version": "2026.1.11-t143100",
   "private": true,
   "description": "Claude-compatible API server with Antigravity (Gemini) upstream, OAuth account manager UI, and Docker support.",
   "main": "src/server.js",
