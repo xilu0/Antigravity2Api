@@ -8,3 +8,4 @@ node_modules/
 .DS_Store
 .ace-tool/
 AgentLogs/
+src/transform/claude/tool_thought_signatures.json
