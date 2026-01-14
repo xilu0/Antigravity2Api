@@ -1,5 +1,5 @@
 const RateLimiter = require("./RateLimiter");
-const dbStorage = require("./DbStorage");
+const storage = require("./Storage");
 const TokenRefresher = require("./TokenRefresher");
 const httpClient = require("./httpClient");
 
@@ -174,7 +174,7 @@ class AuthManager {
       account.refreshTimer = null;
     }
 
-    await dbStorage.delete(account.keyName);
+    await storage.delete(account.keyName);
     this.accounts.splice(idx, 1);
 
     for (const group of ["claude", "gemini"]) {
@@ -197,9 +197,9 @@ class AuthManager {
     this.accounts = [];
     this.currentAccountIndexByGroup = { claude: 0, gemini: 0 };
     try {
-      await dbStorage.init();
+      await storage.init();
 
-      const entries = await dbStorage.list();
+      const entries = await storage.list();
       const candidates = entries.filter(
         (e) => e.key.endsWith(".json") && !e.key.startsWith("package") && e.key !== "tsconfig.json"
       );
@@ -289,7 +289,7 @@ class AuthManager {
       }
 
       account.creds.projectId = projectId;
-      await dbStorage.set(account.keyName, account.creds);
+      await storage.set(account.keyName, account.creds);
       this.log("info", `✅ 获取 projectId 成功: ${projectId}`);
       return projectId;
     })();
@@ -415,7 +415,7 @@ class AuthManager {
     const previousGeminiIndex = this.getCurrentAccountIndex("gemini");
     const hadAccountsBefore = this.accounts.length > 0;
 
-    await dbStorage.init();
+    await storage.init();
 
     // Fetch projectId：先尝试 API 获取；如果没有，且检测到 paidTier 则随机生成
     let projectId = await this.fetchProjectId(formattedData.access_token);
@@ -488,11 +488,11 @@ class AuthManager {
       }
     }
 
-    await dbStorage.set(targetKeyName, formattedData);
+    await storage.set(targetKeyName, formattedData);
 
     if (oldKeyNameToDelete) {
       try {
-        await dbStorage.delete(oldKeyNameToDelete);
+        await storage.delete(oldKeyNameToDelete);
       } catch (e) {
         this.log("warn", `Failed to delete old key "${oldKeyNameToDelete}": ${e.message || e}`);
       }
@@ -576,7 +576,7 @@ class AuthManager {
         }
 
         account.creds = data;
-        await dbStorage.set(account.keyName, data);
+        await storage.set(account.keyName, data);
         this.log("info", `✅ Token refreshed for ${account.keyName}`);
 
         this.tokenRefresher.scheduleRefresh(account);
