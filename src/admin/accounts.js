@@ -27,46 +27,57 @@ async function reloadAccounts(authManager) {
   };
 }
 
+function formatLocalDateTime(date) {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "-";
+  const yyyy = date.getFullYear();
+  const MM = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const HH = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `${yyyy}-${MM}-${dd} ${HH}:${mm}:${ss}`;
+}
+
 async function getAccountQuota(authManager, fileName, upstreamClient) {
   const safeName = String(fileName || "").trim();
   const account = authManager.accounts.find((acc) => acc.keyName === safeName);
-  
+
   if (!account) {
     throw new Error("Account not found");
   }
 
   const accountIndex = authManager.accounts.indexOf(account);
-
   const models = await upstreamClient.fetchAvailableModelsByAccountIndex(accountIndex);
-  
+
   const result = [];
   if (models && typeof models === "object") {
     for (const modelId in models) {
       if (modelId.includes("gemini") || modelId.includes("claude")) {
         const m = models[modelId];
         const quota = m.quotaInfo || {};
-        const limit = quota.remainingFraction !== undefined 
-          ? `${Math.round(quota.remainingFraction * 100)}%` 
-          : "-";
-        
+        const limit =
+          quota.remainingFraction !== undefined ? `${Math.round(quota.remainingFraction * 100)}%` : "-";
+        let resetTimeMs = null;
         let reset = "-";
         if (quota.resetTime) {
-            try {
-                reset = new Date(quota.resetTime).toLocaleString();
-            } catch(e) {}
+          const d = new Date(quota.resetTime);
+          if (Number.isFinite(d.getTime())) {
+            resetTimeMs = d.getTime();
+            reset = formatLocalDateTime(d);
+          }
         }
 
         result.push({
           model: modelId,
           limit,
           reset,
+          resetTimeMs,
         });
       }
     }
   }
-  
-  result.sort((a, b) => a.model.localeCompare(b.model));
 
+  result.sort((a, b) => a.model.localeCompare(b.model));
   return result;
 }
 

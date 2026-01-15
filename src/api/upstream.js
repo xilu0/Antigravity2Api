@@ -583,9 +583,9 @@ class UpstreamClient {
   }
 
   async fetchAvailableModels() {
-    const accessToken = await this.auth.getCurrentAccessToken();
-    this.log("info", "📋 获取可用模型列表");
-    return httpClient.fetchAvailableModels(accessToken, this.auth.apiLimiter);
+    const { accessToken, projectId } = await this.auth.getCredentials();
+    this.log("info", `📋 获取可用模型列表 (projectId: ${projectId || "none"})`);
+    return httpClient.fetchAvailableModels(accessToken, this.auth.apiLimiter, projectId);
   }
 
   async fetchAvailableModelsByAccountIndex(accountIndex) {

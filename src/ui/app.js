@@ -40,22 +40,23 @@
     els.quotaModal.classList.remove("open");
   }
 
-  function renderQuotaTable(data) {
-    if (!data || data.length === 0) {
-      els.quotaBody.innerHTML = '<div style="padding: 20px;">未查询到相关模型额度信息。</div>';
-      return;
-    }
-    let html = '<table class="table" style="min-width: 100%;"><thead><tr><th>模型</th><th>剩余</th><th>重置时间</th></tr></thead><tbody>';
-    for (const item of data) {
-      html += `<tr>
-            <td class="mono">${item.model}</td>
-            <td>${item.limit}</td>
-            <td>${item.reset}</td>
-        </tr>`;
-    }
-    html += '</tbody></table>';
-    els.quotaBody.innerHTML = html;
-  }
+	  function renderQuotaTable(data) {
+	    if (!data || data.length === 0) {
+	      els.quotaBody.innerHTML = '<div style="padding: 20px;">未查询到相关模型额度信息。</div>';
+	      return;
+	    }
+	    let html = '<table class="table" style="min-width: 100%;"><thead><tr><th>模型</th><th>剩余</th><th>重置时间</th></tr></thead><tbody>';
+	    for (const item of data) {
+	      const resetText = Number.isFinite(item?.resetTimeMs) ? formatLocalDateTime(item.resetTimeMs) : item.reset;
+	      html += `<tr>
+	            <td class="mono">${item.model}</td>
+	            <td>${item.limit}</td>
+	            <td>${resetText || "-"}</td>
+	        </tr>`;
+	    }
+	    html += '</tbody></table>';
+	    els.quotaBody.innerHTML = html;
+	  }
 
   function loadApiKey() {
     try {
@@ -108,16 +109,22 @@
     return data;
   }
 
-  function formatExpiry(expiryDateMs) {
-    if (!expiryDateMs) return "-";
-    try {
-      const d = new Date(expiryDateMs);
-      if (Number.isNaN(d.getTime())) return "-";
-      return d.toLocaleString();
-    } catch (e) {
-      return "-";
-    }
-  }
+	  function formatLocalDateTime(value) {
+	    if (value === undefined || value === null || value === "") return "-";
+	    const d = new Date(value);
+	    if (Number.isNaN(d.getTime())) return "-";
+	    const yyyy = d.getFullYear();
+	    const MM = String(d.getMonth() + 1).padStart(2, "0");
+	    const dd = String(d.getDate()).padStart(2, "0");
+	    const HH = String(d.getHours()).padStart(2, "0");
+	    const mm = String(d.getMinutes()).padStart(2, "0");
+	    const ss = String(d.getSeconds()).padStart(2, "0");
+	    return `${yyyy}-${MM}-${dd} ${HH}:${mm}:${ss}`;
+	  }
+	
+	  function formatExpiry(expiryDateMs) {
+	    return formatLocalDateTime(expiryDateMs);
+	  }
 
   function renderAccounts(payload) {
     const { count, current, accounts } = payload || {};

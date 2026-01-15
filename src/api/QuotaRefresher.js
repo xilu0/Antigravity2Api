@@ -182,18 +182,25 @@ class QuotaRefresher {
 
     let account = accounts[idx];
     let accessToken = account?.creds?.access_token || null;
+    let projectId = account?.creds?.projectId || null;
 
-    if (typeof this.auth?.getAccessTokenByIndex === "function") {
+    if (typeof this.auth?.getCredentialsByIndex === "function") {
+      const creds = await this.auth.getCredentialsByIndex(idx, "quota-refresh");
+      account = creds.account;
+      accessToken = creds.accessToken;
+      projectId = creds.projectId || projectId;
+    } else if (typeof this.auth?.getAccessTokenByIndex === "function") {
       const creds = await this.auth.getAccessTokenByIndex(idx, "quota-refresh");
       account = creds.account;
       accessToken = creds.accessToken;
+      projectId = account?.creds?.projectId || projectId;
     }
 
     if (!accessToken) {
       throw new Error("Missing access_token");
     }
 
-    const models = await httpClient.fetchAvailableModels(accessToken, null);
+    const models = await httpClient.fetchAvailableModels(accessToken, null, projectId);
     const accountKey = this.getAccountKeyFromAccount(account) || `account_${idx}`;
     this.updateQuotaCacheFromModels(accountKey, models, Date.now());
     return models || {};
@@ -215,15 +222,23 @@ class QuotaRefresher {
           (async () => {
             let account = null;
             let accessToken = null;
+            let projectId = null;
 
             try {
-              if (typeof this.auth.getAccessTokenByIndex === "function") {
+              if (typeof this.auth.getCredentialsByIndex === "function") {
+                const creds = await this.auth.getCredentialsByIndex(accountIndex, "quota-refresh");
+                account = creds.account;
+                accessToken = creds.accessToken;
+                projectId = creds.projectId || null;
+              } else if (typeof this.auth.getAccessTokenByIndex === "function") {
                 const creds = await this.auth.getAccessTokenByIndex(accountIndex, "quota-refresh");
                 account = creds.account;
                 accessToken = creds.accessToken;
+                projectId = account?.creds?.projectId || null;
               } else if (Array.isArray(this.auth.accounts)) {
                 account = this.auth.accounts[accountIndex];
                 accessToken = account?.creds?.access_token || null;
+                projectId = account?.creds?.projectId || null;
               }
             } catch (e) {
               const accountKey = this.getAccountKeyFromAccount(account) || `account_${accountIndex}`;
@@ -236,7 +251,7 @@ class QuotaRefresher {
             }
 
             try {
-              const models = await httpClient.fetchAvailableModels(accessToken, null);
+              const models = await httpClient.fetchAvailableModels(accessToken, null, projectId);
               return { accountKey, ok: true, models };
             } catch (e) {
               return { accountKey, ok: false, error: e };
