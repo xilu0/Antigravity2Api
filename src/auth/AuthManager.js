@@ -1,7 +1,5 @@
-const path = require("path");
-const fs = require("fs/promises");
-
 const RateLimiter = require("./RateLimiter");
+const storage = require("./Storage");
 const TokenRefresher = require("./TokenRefresher");
 const httpClient = require("./httpClient");
 
@@ -14,7 +12,6 @@ function normalizeQuotaGroup(group) {
 
 function isValidProjectId(projectId) {
   const value = typeof projectId === "string" ? projectId.trim() : "";
-  // Cloud Code may return either a resource name (projects/.../locations/...) or a short id.
   return value.length > 0;
 }
 
@@ -39,12 +36,9 @@ function sanitizeCredentialFileName(fileName) {
 
 class AuthManager {
   constructor(options = {}) {
-    this.authDir = options.authDir || path.resolve(process.cwd(), "auths");
     this.accounts = [];
-    // Claude/Gemini quotas are independent; keep rotation state per group.
     this.currentAccountIndexByGroup = { claude: 0, gemini: 0 };
     this.logger = options.logger || null;
-    // Ensure v1internal requests are spaced >= 1 * 1000ms.
     this.apiLimiter = options.rateLimiter || new RateLimiter(1 * 1000);
 
     this.tokenRefresher = new TokenRefresher({
@@ -65,7 +59,6 @@ class AuthManager {
 
   log(title, data) {
     if (this.logger) {
-      // 支持新的日志 API
       if (typeof this.logger === "function") {
         return this.logger(title, data);
       }
@@ -93,7 +86,7 @@ class AuthManager {
   getAccountsSummary() {
     return this.accounts.map((account, index) => ({
       index,
-      file: path.basename(account.filePath),
+      file: account.keyName,
       email: account.creds?.email || null,
       projectId: account.creds?.projectId || null,
       expiry_date: Number.isFinite(account.creds?.expiry_date) ? account.creds.expiry_date : null,
@@ -121,7 +114,7 @@ class AuthManager {
 
   async deleteAccountByFile(fileName) {
     const safeName = sanitizeCredentialFileName(fileName);
-    const idx = this.accounts.findIndex((a) => path.basename(a.filePath) === safeName);
+    const idx = this.accounts.findIndex((a) => a.keyName === safeName);
     if (idx === -1) {
       return false;
     }
@@ -135,7 +128,7 @@ class AuthManager {
       account.refreshTimer = null;
     }
 
-    await fs.unlink(account.filePath).catch(() => {});
+    await storage.delete(account.keyName);
     this.accounts.splice(idx, 1);
 
     for (const group of ["claude", "gemini"]) {
@@ -158,34 +151,27 @@ class AuthManager {
     this.accounts = [];
     this.currentAccountIndexByGroup = { claude: 0, gemini: 0 };
     try {
-      // Ensure auth directory exists
-      try {
-        await fs.access(this.authDir);
-      } catch {
-        await fs.mkdir(this.authDir, { recursive: true });
-      }
+      await storage.init();
 
-      const files = await fs.readdir(this.authDir);
-      const candidates = files.filter((f) => f.endsWith(".json") && !f.startsWith("package") && f !== "tsconfig.json");
+      const entries = await storage.list();
+      const candidates = entries.filter(
+        (e) => e.key.endsWith(".json") && !e.key.startsWith("package") && e.key !== "tsconfig.json"
+      );
 
       let loadedCount = 0;
-      for (const file of candidates) {
+      for (const entry of candidates) {
         try {
-          const filePath = path.join(this.authDir, file);
-          const content = await fs.readFile(filePath, "utf8");
-          try {
-            const creds = JSON.parse(content);
-            if (creds.access_token && creds.refresh_token && (creds.token_type || creds.scope)) {
-              this.accounts.push({
-                filePath,
-                creds,
-                refreshPromise: null,
-                refreshTimer: null,
-                projectPromise: null,
-              });
-              loadedCount++;
-            }
-          } catch (parseErr) {}
+          const creds = entry.data;
+          if (creds.access_token && creds.refresh_token && (creds.token_type || creds.scope)) {
+            this.accounts.push({
+              keyName: entry.key,
+              creds,
+              refreshPromise: null,
+              refreshTimer: null,
+              projectPromise: null,
+            });
+            loadedCount++;
+          }
         } catch (e) {}
       }
 
@@ -200,12 +186,10 @@ class AuthManager {
         this.tokenRefresher.scheduleRefresh(account);
       }
 
-      // Kick off an initial refresh batch (non-blocking) so downstream quota refresh can run with valid tokens.
       this.initialTokenRefreshPromise = this.tokenRefresher
         ? this.tokenRefresher.refreshDueAccountsNow().catch(() => {})
         : Promise.resolve();
 
-      // Best-effort: refresh/repair projectId for all loaded accounts.
       this.initialProjectIdRefreshPromise = (async () => {
         try {
           await this.waitInitialTokenRefresh();
@@ -238,7 +222,7 @@ class AuthManager {
       perAccount.push(
         (async () => {
           const account = this.accounts[i];
-          const accountName = account?.filePath ? path.basename(account.filePath) : `account_${i}`;
+          const accountName = account?.keyName || `account_${i}`;
           try {
             if (account?.creds && isValidProjectId(account.creds.projectId) && hasProjectIdRepairMarker(account.creds)) {
               return { ok: true, accountName, skipped: true };
@@ -250,7 +234,6 @@ class AuthManager {
               throw new Error("Missing access_token");
             }
 
-            // Be aggressive (like quota refresh): do not use the shared v1internal RateLimiter.
             const projectId = await httpClient.fetchProjectId(accessToken, null, { maxAttempts: 3 });
             if (!isValidProjectId(projectId)) {
               throw new Error(`Invalid projectId: ${String(projectId || "")}`.trim());
@@ -264,7 +247,7 @@ class AuthManager {
             account.creds.projectId = projectId;
             account.creds.projectIdResolvedAt = new Date().toISOString();
             if (needsWrite) {
-              await fs.writeFile(account.filePath, JSON.stringify(account.creds, null, 2));
+              await storage.set(account.keyName, account.creds);
             }
 
             return { ok: true, accountName };
@@ -329,7 +312,7 @@ class AuthManager {
 
       account.creds.projectId = projectId;
       account.creds.projectIdResolvedAt = new Date().toISOString();
-      await fs.writeFile(account.filePath, JSON.stringify(account.creds, null, 2));
+      await storage.set(account.keyName, account.creds);
       this.log("info", `✅ 获取 projectId 成功: ${projectId}`);
       return projectId;
     })();
@@ -355,7 +338,7 @@ class AuthManager {
     }
 
     if (account.creds.expiry_date < +new Date()) {
-      const accountName = path.basename(account.filePath);
+      const accountName = account.keyName;
       this.log("info", `Refreshing token for [${quotaGroup}] account ${accountIndex + 1} (${accountName})...`);
       await this.refreshToken(account);
     }
@@ -388,7 +371,7 @@ class AuthManager {
     }
 
     if (account.creds.expiry_date < +new Date()) {
-      const accountName = path.basename(account.filePath);
+      const accountName = account.keyName;
       this.log("info", `Refreshing token for [${logGroup}] account ${accountIndex + 1} (${accountName})...`);
       await this.refreshToken(account);
     }
@@ -422,7 +405,7 @@ class AuthManager {
     }
 
     if (account.creds.expiry_date < +new Date()) {
-      const accountName = path.basename(account.filePath);
+      const accountName = account.keyName;
       this.log("info", `Refreshing token for [${logGroup}] account ${accountIndex + 1} (${accountName})...`);
       await this.refreshToken(account);
     }
@@ -455,14 +438,8 @@ class AuthManager {
     const previousGeminiIndex = this.getCurrentAccountIndex("gemini");
     const hadAccountsBefore = this.accounts.length > 0;
 
-    // Ensure auth directory exists
-    try {
-      await fs.access(this.authDir);
-    } catch {
-      await fs.mkdir(this.authDir, { recursive: true });
-    }
+    await storage.init();
 
-    // Adding an account requires a valid projectId.
     const projectId = await this.fetchProjectId(formattedData.access_token);
     if (!isValidProjectId(projectId)) {
       throw new Error(`Failed to obtain valid projectId, account is not eligible: ${String(projectId || "")}`.trim());
@@ -473,8 +450,7 @@ class AuthManager {
 
     const email = formattedData.email;
 
-    // Check for duplicates
-    let targetFilePath = null;
+    let targetKeyName = null;
     let existingAccountIndex = -1;
 
     if (email) {
@@ -493,7 +469,7 @@ class AuthManager {
         }
 
         if (accEmail && accEmail === email) {
-          targetFilePath = acc.filePath;
+          targetKeyName = acc.keyName;
           existingAccountIndex = i;
           this.log("info", `Found existing account for ${email}, updating...`);
           break;
@@ -501,36 +477,39 @@ class AuthManager {
       }
     }
 
-    // Determine filename
+    let oldKeyNameToDelete = null;
     if (existingAccountIndex !== -1) {
-      targetFilePath = this.accounts[existingAccountIndex].filePath;
+      targetKeyName = this.accounts[existingAccountIndex].keyName;
 
-      // Migrate to email-based filename if possible
       if (email) {
         const safeEmail = email.replace(/[^a-zA-Z0-9@.]/g, "_");
-        const newPath = path.join(this.authDir, `${safeEmail}.json`);
+        const newKeyName = `${safeEmail}.json`;
 
-        if (targetFilePath !== newPath) {
-          try {
-            await fs.unlink(targetFilePath).catch(() => {});
-            targetFilePath = newPath;
-            this.accounts[existingAccountIndex].filePath = newPath;
-            this.log("info", `Renamed credentials to ${path.basename(newPath)}`);
-          } catch (e) {
-            this.log("error", `Error renaming file: ${e.message || e}`);
-          }
+        if (targetKeyName !== newKeyName) {
+          oldKeyNameToDelete = targetKeyName;
+          targetKeyName = newKeyName;
+          this.accounts[existingAccountIndex].keyName = newKeyName;
+          this.log("info", `Renamed credentials to ${newKeyName}`);
         }
       }
     } else {
       if (email) {
         const safeEmail = email.replace(/[^a-zA-Z0-9@.]/g, "_");
-        targetFilePath = path.join(this.authDir, `${safeEmail}.json`);
+        targetKeyName = `${safeEmail}.json`;
       } else {
-        targetFilePath = path.join(this.authDir, `oauth-${Date.now()}.json`);
+        targetKeyName = `oauth-${Date.now()}.json`;
       }
     }
 
-    await fs.writeFile(targetFilePath, JSON.stringify(formattedData, null, 2));
+    await storage.set(targetKeyName, formattedData);
+
+    if (oldKeyNameToDelete) {
+      try {
+        await storage.delete(oldKeyNameToDelete);
+      } catch (e) {
+        this.log("warn", `Failed to delete old key "${oldKeyNameToDelete}": ${e.message || e}`);
+      }
+    }
 
     let targetAccount;
     if (existingAccountIndex !== -1) {
@@ -538,7 +517,7 @@ class AuthManager {
       targetAccount = this.accounts[existingAccountIndex];
     } else {
       targetAccount = {
-        filePath: targetFilePath,
+        keyName: targetKeyName,
         creds: formattedData,
         refreshPromise: null,
         refreshTimer: null,
@@ -547,8 +526,6 @@ class AuthManager {
       this.accounts.push(targetAccount);
     }
 
-    // Adding/updating an account should not implicitly change current selection.
-    // (If this is the first account, default to index 0.)
     const clampIndex = (idx) => {
       if (this.accounts.length === 0) return 0;
       const n = Number.isInteger(idx) ? idx : 0;
@@ -580,12 +557,10 @@ class AuthManager {
         const refresh_token = account.creds.refresh_token;
         const data = await httpClient.refreshToken(refresh_token, null);
 
-        // 保持 email 字段 (如果有)
         if (account.creds.email) {
           data.email = account.creds.email;
         }
 
-        // Ensure projectId; do not generate random IDs.
         const existingProjectId = account.creds.projectId;
         if (isValidProjectId(existingProjectId) && hasProjectIdRepairMarker(account.creds)) {
           data.projectId = existingProjectId.trim();
@@ -601,7 +576,8 @@ class AuthManager {
         }
 
         account.creds = data;
-        await fs.writeFile(account.filePath, JSON.stringify(data, null, 2));
+        await storage.set(account.keyName, data);
+        this.log("info", `✅ Token refreshed for ${account.keyName}`);
 
         this.tokenRefresher.scheduleRefresh(account);
 

@@ -66,7 +66,8 @@ class TokenRefresher {
 
       const results = await Promise.allSettled(
         due.map(async (account) => {
-          const accountName = path.basename(account.filePath);
+          const accountName =
+            account?.keyName || (account?.filePath ? path.basename(account.filePath) : "unknown-account");
           try {
             await this.refresh(account);
             return { ok: true, accountName };

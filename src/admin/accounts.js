@@ -1,5 +1,3 @@
-const path = require("path");
-
 function getAccountsPayload(authManager) {
   const accounts = authManager.getAccountsSummary();
   return {
@@ -49,7 +47,7 @@ function formatRemainingFractionAsPercent(remainingFraction) {
 
 async function getAccountQuota(authManager, fileName, upstreamClient) {
   const safeName = String(fileName || "").trim();
-  const account = authManager.accounts.find((acc) => path.basename(acc.filePath) === safeName);
+  const account = authManager.accounts.find((acc) => acc.keyName === safeName);
 
   if (!account) {
     throw new Error("Account not found");

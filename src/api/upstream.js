@@ -171,7 +171,7 @@ class UpstreamClient {
   }
 
   getAccountKeyFromAccount(account) {
-    return account?.filePath ? path.basename(account.filePath) : "unknown-account";
+    return account?.keyName || (account?.filePath ? path.basename(account.filePath) : "unknown-account");
   }
 
   parseErrorDetails(errText) {
