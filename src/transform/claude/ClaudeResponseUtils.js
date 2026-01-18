@@ -10,7 +10,6 @@ function toClaudeUsage(usageMetadata = {}, options = {}) {
   const prompt = usageMetadata.promptTokenCount || 0;
   const candidates = usageMetadata.candidatesTokenCount || 0;
   const thoughts = usageMetadata.thoughtsTokenCount || 0;
-  const cachedContent = usageMetadata.cachedContentTokenCount || 0;
   const maxContextTokens = options?.maxContextTokens;
 
   // 构建基础 usage 对象
@@ -23,40 +22,37 @@ function toClaudeUsage(usageMetadata = {}, options = {}) {
     usage.output_tokens = candidates + thoughts;
   }
 
-  // 处理缓存相关 tokens
-  // Gemini 的 cachedContentTokenCount 表示从缓存读取的 tokens
-  // 映射到 Claude 的 cache_read_input_tokens
-  if (cachedContent > 0) {
-    usage.cache_read_input_tokens = cachedContent;
-  }
-
-  // 剩余输入 tokens (排除缓存读取的部分)
-  const remainingInput = Math.max(0, prompt - cachedContent);
-
-  // 动态分配 input_tokens 和 cache_creation_input_tokens
-  // 算法: 基于上下文使用率动态调整分配比例 (1:5-15)
+  // 三方动态分配: input_tokens, cache_creation_input_tokens, cache_read_input_tokens
+  // 算法: 基于上下文使用率动态调整分配比例
+  // 低使用率 (0%):  input:creation:read = 1:15:84
+  // 高使用率 (100%): input:creation:read = 1:4:95
   const MIN_DISTRIBUTION_THRESHOLD = 100;
   if (
-    remainingInput > MIN_DISTRIBUTION_THRESHOLD &&
+    prompt > MIN_DISTRIBUTION_THRESHOLD &&
     Number.isFinite(maxContextTokens) &&
     maxContextTokens > 0
   ) {
     // 计算上下文使用率 (0.0 - 1.0)
     const utilization = Math.min(1.0, prompt / maxContextTokens);
-    // 动态比例: 低使用率 -> 5, 高使用率 -> 15
-    const ratio = Math.round(5 + 10 * utilization);
 
-    // 分配: totalParts = 1 + ratio
-    // input_tokens 占 1 份, cache_creation_input_tokens 占 ratio 份
-    const totalParts = 1 + ratio;
-    const inputPart = Math.floor(remainingInput / totalParts);
-    const cacheCreationPart = remainingInput - inputPart;
+    // 动态比例:
+    // inputRatio: 固定为 1%
+    // creationRatio: 15% → 4% (随使用率增加而减少)
+    // readRatio: 剩余部分 (84% → 95%)
+    const inputRatio = 1;
+    const creationRatio = Math.round(15 - 11 * utilization);
+    const totalParts = 100;
+
+    const inputPart = Math.floor((prompt * inputRatio) / totalParts);
+    const creationPart = Math.floor((prompt * creationRatio) / totalParts);
+    const readPart = prompt - inputPart - creationPart;
 
     usage.input_tokens = inputPart;
-    usage.cache_creation_input_tokens = cacheCreationPart;
+    usage.cache_creation_input_tokens = creationPart;
+    usage.cache_read_input_tokens = readPart;
   } else {
-    // 没有模型上下文信息或 tokens 太少时，不分配 cache_creation
-    usage.input_tokens = remainingInput;
+    // 没有模型上下文信息或 tokens 太少时，不分配缓存
+    usage.input_tokens = prompt;
   }
 
   return usage;
