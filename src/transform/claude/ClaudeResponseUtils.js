@@ -11,6 +11,7 @@ function toClaudeUsage(usageMetadata = {}, options = {}) {
   const candidates = usageMetadata.candidatesTokenCount || 0;
   const thoughts = usageMetadata.thoughtsTokenCount || 0;
   const maxContextTokens = options?.maxContextTokens;
+  const shouldLog = options?.log === true;
 
   // 构建基础 usage 对象
   const usage = {};
@@ -27,6 +28,7 @@ function toClaudeUsage(usageMetadata = {}, options = {}) {
   // 低使用率 (0%):  input:creation:read = 1:15:84
   // 高使用率 (100%): input:creation:read = 1:4:95
   const MIN_DISTRIBUTION_THRESHOLD = 100;
+
   if (
     prompt > MIN_DISTRIBUTION_THRESHOLD &&
     Number.isFinite(maxContextTokens) &&
@@ -50,6 +52,13 @@ function toClaudeUsage(usageMetadata = {}, options = {}) {
     usage.input_tokens = inputPart;
     usage.cache_creation_input_tokens = creationPart;
     usage.cache_read_input_tokens = readPart;
+
+    // 仅在 log=true 时输出日志 (message_delta 最终阶段)
+    if (shouldLog) {
+      const readPercent = ((readPart / prompt) * 100).toFixed(0);
+      // Use stderr to avoid polluting stdout (which can interfere with client communication)
+      process.stderr.write(`[USAGE] Gemini ${prompt} → Claude input:${inputPart} | cache_write:${creationPart} | cache_read:${readPart} (${readPercent}%)\n`);
+    }
   } else {
     // 没有模型上下文信息或 tokens 太少时，不分配缓存
     usage.input_tokens = prompt;
@@ -62,4 +71,3 @@ module.exports = {
   makeToolUseId,
   toClaudeUsage,
 };
-

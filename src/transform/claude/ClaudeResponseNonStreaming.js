@@ -261,7 +261,7 @@ class NonStreamingProcessor {
       content: this.contentBlocks,
       stop_reason: stopReason,
       stop_sequence: null,
-      usage: toClaudeUsage(this.raw.usageMetadata, { maxContextTokens: this.options?.maxContextTokens }),
+      usage: toClaudeUsage(this.raw.usageMetadata, { maxContextTokens: this.options?.maxContextTokens, log: true }),
     };
 
     // 如果没有 usage 数据，删除该字段

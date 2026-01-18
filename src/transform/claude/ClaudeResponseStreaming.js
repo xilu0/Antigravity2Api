@@ -77,6 +77,8 @@ class StreamingState {
   emitMessageStart(rawJSON) {
     if (this.messageStartSent) return;
 
+    // message_start 包含初始 usage (input tokens)，output_tokens 为 0
+    // 最终 usage 在 message_delta 中更新
     const usage = rawJSON.usageMetadata ? toClaudeUsage(rawJSON.usageMetadata, { maxContextTokens: this.maxContextTokens }) : undefined;
 
     this.emit("message_start", {
@@ -177,7 +179,7 @@ class StreamingState {
       stopReason = "max_tokens";
     }
 
-    const usage = toClaudeUsage(usageMetadata || {}, { maxContextTokens: this.maxContextTokens });
+    const usage = toClaudeUsage(usageMetadata || {}, { maxContextTokens: this.maxContextTokens, log: true });
     const mergedUsage = extraUsage && typeof extraUsage === "object" ? { ...usage, ...extraUsage } : usage;
 
     this.emit("message_delta", {

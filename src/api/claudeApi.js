@@ -220,29 +220,37 @@ class ClaudeApi {
       // projectId is not required for countTokens, but transform reuses Claude->v1internal mapping to build contents/model.
       const { body: finalBody } = transformClaudeRequestIn(requestData, "");
 
-      const countTokensBody = {
-        request: {
-          model: finalBody.model,
-          contents: finalBody.request.contents || [],
-        },
-      };
-      this.log("CountTokens Request Body", countTokensBody);
+      // 完全使用本地估算 - 跳过上游 API 调用
+      // 原因：v1internal countTokens API 不支持 systemInstruction，总是返回 totalTokens: 1
+      // 而且上游调用很慢（30-40秒），导致 Claude Code /context 显示延迟
+      let totalTokens = 0;
 
-      const countTokensResp = await this.upstream.countTokens(countTokensBody, { model: finalBody.model });
-      if (!countTokensResp.ok) {
-        return {
-          status: countTokensResp.status,
-          headers: headersToObject(countTokensResp.headers),
-          body: countTokensResp.body,
-        };
+      // 本地估算 contents Token
+      if (finalBody.request && finalBody.request.contents) {
+        try {
+          const contentsStr = JSON.stringify(finalBody.request.contents);
+          const contentsTokenCount = Math.floor(contentsStr.length / 4);
+          this.log("info", `本地估算 Contents Token: ${contentsTokenCount}`);
+          totalTokens += contentsTokenCount;
+        } catch (e) {
+          this.log("error", `Contents token estimation failed: ${e.message || e}`);
+        }
       }
 
-      const data = await countTokensResp.json();
-      this.log("CountTokens Response", data);
+      // 本地估算 systemInstruction Token
+      if (finalBody.request && finalBody.request.systemInstruction) {
+        try {
+          const sysInstructionStr = JSON.stringify(finalBody.request.systemInstruction);
+          // 使用字符数 / 4 估算 token 数（通用估算比例）
+          const sysTokenCount = Math.floor(sysInstructionStr.length / 4);
+          this.log("info", `本地估算 SystemInstruction Token: ${sysTokenCount}`);
+          totalTokens += sysTokenCount;
+        } catch (e) {
+          this.log("error", `SystemInstruction token estimation failed: ${e.message || e}`);
+        }
+      }
 
-      let totalTokens = data.totalTokens || 0;
-
-      // 本地估算 Tools Token (API 不计算 Tools，参考现有实现)
+      // 本地估算 Tools Token
       if (finalBody.request && finalBody.request.tools) {
         try {
           const toolsStr = JSON.stringify(finalBody.request.tools);
