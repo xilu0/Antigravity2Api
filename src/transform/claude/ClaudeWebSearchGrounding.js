@@ -224,7 +224,7 @@ async function buildNonStreamingWebSearchMessage(rawJSON, options, toClaudeUsage
 
   const finish = candidate?.finishReason;
   const stopReason = finish === "MAX_TOKENS" ? "max_tokens" : "end_turn";
-  const usage = typeof toClaudeUsage === "function" ? toClaudeUsage(rawJSON.usageMetadata || {}) : undefined;
+  const usage = typeof toClaudeUsage === "function" ? toClaudeUsage(rawJSON.usageMetadata || {}, { maxContextTokens: options?.maxContextTokens }) : undefined;
 
   return {
     id: rawJSON.responseId || "",

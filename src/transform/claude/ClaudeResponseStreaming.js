@@ -48,6 +48,7 @@ class StreamingState {
     this.messageStartSent = false;
     this.messageStopSent = false;
     this.overrideModel = null;
+    this.maxContextTokens = null;
     this.usedTool = false;
     this.hasThinking = false;
     this.signatures = new SignatureManager(); // thinking/FC 签名
@@ -76,7 +77,7 @@ class StreamingState {
   emitMessageStart(rawJSON) {
     if (this.messageStartSent) return;
 
-    const usage = rawJSON.usageMetadata ? toClaudeUsage(rawJSON.usageMetadata) : undefined;
+    const usage = rawJSON.usageMetadata ? toClaudeUsage(rawJSON.usageMetadata, { maxContextTokens: this.maxContextTokens }) : undefined;
 
     this.emit("message_start", {
       type: "message_start",
@@ -176,7 +177,7 @@ class StreamingState {
       stopReason = "max_tokens";
     }
 
-    const usage = toClaudeUsage(usageMetadata || {});
+    const usage = toClaudeUsage(usageMetadata || {}, { maxContextTokens: this.maxContextTokens });
     const mergedUsage = extraUsage && typeof extraUsage === "object" ? { ...usage, ...extraUsage } : usage;
 
     this.emit("message_delta", {
@@ -403,6 +404,9 @@ async function handleStreamingResponse(response, options = {}) {
     async start(controller) {
       const state = new StreamingState(encoder, controller);
       if (options?.overrideModel) state.overrideModel = options.overrideModel;
+      if (options?.maxContextTokens && Number.isFinite(options.maxContextTokens)) {
+        state.maxContextTokens = options.maxContextTokens;
+      }
       const mcpXmlToolNames = Array.isArray(options?.mcpXmlToolNames) ? options.mcpXmlToolNames : [];
       if (isMcpXmlEnabled() && mcpXmlToolNames.length > 0) {
         state.mcpXmlParser = createMcpXmlStreamParser(mcpXmlToolNames);

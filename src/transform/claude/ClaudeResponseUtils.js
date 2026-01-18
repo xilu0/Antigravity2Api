@@ -6,11 +6,12 @@ function makeToolUseId() {
 }
 
 // 转换 usageMetadata 为 Claude 格式
-function toClaudeUsage(usageMetadata = {}) {
+function toClaudeUsage(usageMetadata = {}, options = {}) {
   const prompt = usageMetadata.promptTokenCount || 0;
   const candidates = usageMetadata.candidatesTokenCount || 0;
   const thoughts = usageMetadata.thoughtsTokenCount || 0;
   const cachedContent = usageMetadata.cachedContentTokenCount || 0;
+  const maxContextTokens = options?.maxContextTokens;
 
   // 构建基础 usage 对象
   const usage = {};
@@ -27,14 +28,36 @@ function toClaudeUsage(usageMetadata = {}) {
   // 映射到 Claude 的 cache_read_input_tokens
   if (cachedContent > 0) {
     usage.cache_read_input_tokens = cachedContent;
-    // input_tokens 是除去缓存后的实际输入 tokens
-    usage.input_tokens = Math.max(0, prompt - cachedContent);
-  } else {
-    usage.input_tokens = prompt;
   }
 
-  // 注意：Gemini API 目前不直接提供 cache_creation_input_tokens
-  // 如果将来 Gemini 提供了相关字段，可以在这里添加映射
+  // 剩余输入 tokens (排除缓存读取的部分)
+  const remainingInput = Math.max(0, prompt - cachedContent);
+
+  // 动态分配 input_tokens 和 cache_creation_input_tokens
+  // 算法: 基于上下文使用率动态调整分配比例 (1:5-15)
+  const MIN_DISTRIBUTION_THRESHOLD = 100;
+  if (
+    remainingInput > MIN_DISTRIBUTION_THRESHOLD &&
+    Number.isFinite(maxContextTokens) &&
+    maxContextTokens > 0
+  ) {
+    // 计算上下文使用率 (0.0 - 1.0)
+    const utilization = Math.min(1.0, prompt / maxContextTokens);
+    // 动态比例: 低使用率 -> 5, 高使用率 -> 15
+    const ratio = Math.round(5 + 10 * utilization);
+
+    // 分配: totalParts = 1 + ratio
+    // input_tokens 占 1 份, cache_creation_input_tokens 占 ratio 份
+    const totalParts = 1 + ratio;
+    const inputPart = Math.floor(remainingInput / totalParts);
+    const cacheCreationPart = remainingInput - inputPart;
+
+    usage.input_tokens = inputPart;
+    usage.cache_creation_input_tokens = cacheCreationPart;
+  } else {
+    // 没有模型上下文信息或 tokens 太少时，不分配 cache_creation
+    usage.input_tokens = remainingInput;
+  }
 
   return usage;
 }

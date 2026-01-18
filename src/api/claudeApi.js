@@ -254,6 +254,11 @@ class ClaudeApi {
         const names = getMcpToolNames(requestData?.tools);
         if (names.length > 0) transformOutOptions.mcpXmlToolNames = names;
       }
+      // Get model context limit for dynamic cache token allocation
+      const maxContextTokens = this.upstream?.quotaRefresher?.getModelContextLimit?.(modelForQuota);
+      if (maxContextTokens && Number.isFinite(maxContextTokens)) {
+        transformOutOptions.maxContextTokens = maxContextTokens;
+      }
 
       let loggedTransformed = false;
       const response = await this.upstream.callV1Internal(method, {

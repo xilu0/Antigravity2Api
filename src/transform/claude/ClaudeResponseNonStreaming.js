@@ -7,6 +7,7 @@ const { buildNonStreamingWebSearchMessage } = require("./ClaudeWebSearchGroundin
 class NonStreamingProcessor {
   constructor(rawJSON, options = {}) {
     this.raw = rawJSON;
+    this.options = options;
     this.contentBlocks = [];
     this.textBuilder = "";
     this.thinkingBuilder = "";
@@ -260,7 +261,7 @@ class NonStreamingProcessor {
       content: this.contentBlocks,
       stop_reason: stopReason,
       stop_sequence: null,
-      usage: toClaudeUsage(this.raw.usageMetadata),
+      usage: toClaudeUsage(this.raw.usageMetadata, { maxContextTokens: this.options?.maxContextTokens }),
     };
 
     // 如果没有 usage 数据，删除该字段

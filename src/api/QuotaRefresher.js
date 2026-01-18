@@ -148,12 +148,16 @@ class QuotaRefresher {
     if (!models || typeof models !== "object") return;
 
     for (const modelId of Object.keys(models)) {
-      const quotaInfo = models[modelId]?.quotaInfo || {};
+      const modelInfo = models[modelId] || {};
+      const quotaInfo = modelInfo.quotaInfo || {};
       const remainingFraction = quotaInfo.remainingFraction;
       const remainingPercent =
         typeof remainingFraction === "number" && Number.isFinite(remainingFraction) ? remainingFraction * 100 : null;
       const resetTime = quotaInfo.resetTime || null;
       const resetTimeMs = resetTime ? Date.parse(resetTime) : null;
+
+      // Extract inputTokenLimit from model info
+      const inputTokenLimit = modelInfo.inputTokenLimit || modelInfo.maxInputTokens || modelInfo.contextWindow || null;
 
       const perModel = this.modelQuotaByAccount.get(modelId) || new Map();
       const prev = perModel.get(accountKey) || {};
@@ -164,9 +168,23 @@ class QuotaRefresher {
         resetTime,
         resetTimeMs: Number.isFinite(resetTimeMs) ? resetTimeMs : null,
         updatedAtMs: now,
+        inputTokenLimit: Number.isFinite(inputTokenLimit) ? inputTokenLimit : prev?.inputTokenLimit || null,
       });
       this.modelQuotaByAccount.set(modelId, perModel);
     }
+  }
+
+  getModelContextLimit(modelId) {
+    const key = String(modelId || "").trim();
+    if (!key) return null;
+    const perModel = this.modelQuotaByAccount.get(key);
+    if (!perModel) return null;
+    for (const [, quota] of perModel) {
+      if (quota?.inputTokenLimit && Number.isFinite(quota.inputTokenLimit)) {
+        return quota.inputTokenLimit;
+      }
+    }
+    return null;
   }
 
   async fetchModelsByAccountIndex(accountIndex) {
