@@ -226,6 +226,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Silently ignore Claude Code telemetry requests
+  if (req.url === "/api/event_logging/batch") {
+    res.writeHead(200, { ...CORS_HEADERS, "Content-Type": "application/json" });
+    res.end("{}");
+    return;
+  }
+
   logger.logRequest(req.method, req.url, {
     requestId,
     headers: { 
