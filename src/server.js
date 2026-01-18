@@ -32,7 +32,7 @@ const authManager = new AuthManager({
 });
 
 const upstreamClient = new UpstreamClient(authManager, { logger });
-const claudeApi = new ClaudeApi({ authManager, upstreamClient, logger, debug: debugRequestResponse });
+const claudeApi = new ClaudeApi({ authManager, upstreamClient, logger, debug: debugRequestResponse, debugRawResponse: config.debug_raw_response });
 const geminiApi = new GeminiApi({ authManager, upstreamClient, logger, debug: debugRequestResponse });
 
 const isAddFlow = process.argv.includes("--add");

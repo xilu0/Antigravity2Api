@@ -1,3 +1,7 @@
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+
 const { transformClaudeRequestIn, transformClaudeResponseOut, mapClaudeModelToGemini } = require("../transform/claude");
 const { getMcpSwitchModel } = require("../mcp/mcpSwitchFlag");
 const { isMcpXmlEnabled, getMcpToolNames } = require("../mcp/mcpXmlBridge");
@@ -57,6 +61,7 @@ class ClaudeApi {
     this.upstream = options.upstreamClient;
     this.logger = options.logger || null;
     this.debugRequestResponse = !!options.debug;
+    this.debugRawResponse = !!options.debugRawResponse;
     this.sessionMcpState = new Map(); // sessionId -> { lastFamily, mcpStartIndex, foldedSegments: [] }
   }
 
@@ -116,6 +121,60 @@ class ClaudeApi {
       }
     } catch (err) {
       this.log("warn", `Raw stream log failed for ${label}: ${err.message || err}`);
+    }
+    return stream;
+  }
+
+  generateRawResponseFilename() {
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[:.]/g, "-").replace("Z", "");
+    const requestId = crypto.randomBytes(3).toString("hex");
+    return { filename: `raw_response_${timestamp}_${requestId}.json`, requestId, timestamp: now.toISOString() };
+  }
+
+  async saveRawResponse(rawData, { model, streaming, httpStatus, requestId, timestamp }) {
+    try {
+      const logDir = path.resolve(process.cwd(), "log");
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+
+      const { filename, requestId: genRequestId, timestamp: genTimestamp } = this.generateRawResponseFilename();
+      const filePath = path.join(logDir, filename);
+
+      const content = JSON.stringify({
+        timestamp: timestamp || genTimestamp,
+        requestId: requestId || genRequestId,
+        model,
+        streaming,
+        httpStatus,
+        rawResponse: rawData,
+      }, null, 2);
+
+      await fs.promises.writeFile(filePath, content, "utf8");
+      this.log("debug", `Raw response saved to ${filename}`);
+    } catch (err) {
+      this.log("warn", `Failed to save raw response: ${err.message || err}`);
+    }
+  }
+
+  async captureRawResponseStream(stream, { model, streaming, httpStatus }) {
+    if (!stream) return stream;
+    try {
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      let bufferStr = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunkStr = decoder.decode(value, { stream: true });
+        bufferStr += chunkStr;
+      }
+      if (bufferStr) {
+        await this.saveRawResponse(bufferStr, { model, streaming, httpStatus });
+      }
+    } catch (err) {
+      this.log("warn", `Raw response capture failed: ${err.message || err}`);
     }
     return stream;
   }
@@ -304,12 +363,24 @@ class ClaudeApi {
 
       // Log Gemini response raw stream
       let responseForTransform = response;
-      if (this.debugRequestResponse && response.body) {
+      if ((this.debugRequestResponse || this.debugRawResponse) && response.body) {
         try {
-          const [logBranch, processBranch] = response.body.tee();
+          const [branch1, branch2] = response.body.tee();
           const rawLabel = method === "streamGenerateContent" ? "Gemini Response Raw (Stream)" : "Gemini Response Raw";
-          this.logStreamContent(logBranch, rawLabel);
-          responseForTransform = new Response(processBranch, {
+          const streaming = method === "streamGenerateContent";
+
+          if (this.debugRequestResponse && this.debugRawResponse) {
+            // Both enabled: tee again for separate handling
+            const [logBranch, saveBranch] = branch1.tee();
+            this.logStreamContent(logBranch, rawLabel);
+            this.captureRawResponseStream(saveBranch, { model: modelForQuota, streaming, httpStatus: response.status });
+          } else if (this.debugRequestResponse) {
+            this.logStreamContent(branch1, rawLabel);
+          } else if (this.debugRawResponse) {
+            this.captureRawResponseStream(branch1, { model: modelForQuota, streaming, httpStatus: response.status });
+          }
+
+          responseForTransform = new Response(branch2, {
             status: response.status,
             statusText: response.statusText,
             headers: response.headers,

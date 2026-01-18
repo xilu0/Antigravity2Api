@@ -8,6 +8,8 @@ const DEFAULT_CONFIG = {
   log: { retention_days: 3 },
   // Debug switch: only affects request/response payload logs.
   debug: false,
+  // Debug raw response: save raw Gemini responses to JSON files in log/ directory.
+  debug_raw_response: false,
 };
 
 let cachedConfig = null;
@@ -172,6 +174,11 @@ function applyEnvOverrides(config) {
   const logRetentionDays = parseNonNegativeInt(process.env.AG2API_LOG_RETENTION_DAYS);
   if (logRetentionDays != null) {
     out.log.retention_days = logRetentionDays;
+  }
+
+  const debugRawResponse = parseBool(process.env.AG2API_DEBUG_RAW_RESPONSE);
+  if (debugRawResponse != null) {
+    out.debug_raw_response = debugRawResponse;
   }
 
   return out;
