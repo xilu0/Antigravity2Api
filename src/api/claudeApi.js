@@ -247,7 +247,8 @@ class ClaudeApi {
       const queryString = method === "streamGenerateContent" ? "?alt=sse" : "";
 
       const transformOutOptions = {};
-      if (mcpModel) transformOutOptions.overrideModel = baseModel;
+      // 始终使用原始请求的模型名称,避免响应中返回映射后的模型名
+      transformOutOptions.overrideModel = requestData.model;
       if (!clientWantsStream && method === "streamGenerateContent") transformOutOptions.forceNonStreaming = true;
       if (isMcpXmlEnabled()) {
         const names = getMcpToolNames(requestData?.tools);
