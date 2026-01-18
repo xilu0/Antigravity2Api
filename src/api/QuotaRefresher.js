@@ -177,14 +177,30 @@ class QuotaRefresher {
   getModelContextLimit(modelId) {
     const key = String(modelId || "").trim();
     if (!key) return null;
+
+    // 1. Try to get from quota cache
     const perModel = this.modelQuotaByAccount.get(key);
-    if (!perModel) return null;
-    for (const [, quota] of perModel) {
-      if (quota?.inputTokenLimit && Number.isFinite(quota.inputTokenLimit)) {
-        return quota.inputTokenLimit;
+    if (perModel) {
+      for (const [, quota] of perModel) {
+        if (quota?.inputTokenLimit && Number.isFinite(quota.inputTokenLimit)) {
+          return quota.inputTokenLimit;
+        }
       }
     }
-    return null;
+
+    // 2. Fallback: use hardcoded context limits
+    //    These values are from Claude/Gemini official documentation
+    const DEFAULT_CONTEXT_LIMITS = {
+      "claude-opus-4-5-thinking": 200000,
+      "claude-opus-4-5": 200000,
+      "claude-sonnet-4-5": 200000,
+      "claude-sonnet-4-5-thinking": 200000,
+      "gemini-2.5-flash": 1000000,
+      "gemini-2.5-pro": 1000000,
+      "gemini-3-flash": 1000000,
+    };
+
+    return DEFAULT_CONTEXT_LIMITS[key] || null;
   }
 
   async fetchModelsByAccountIndex(accountIndex) {
