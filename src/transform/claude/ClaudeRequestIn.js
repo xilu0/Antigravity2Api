@@ -9,7 +9,7 @@ const {
   buildMcpToolCallXml,
   buildMcpToolResultXml,
 } = require("../../mcp/mcpXmlBridge");
-const { getToolThoughtSignature, deleteToolThoughtSignature, isDebugEnabled } = require("./ToolThoughtSignatureStore");
+const { getToolThoughtSignature, deleteToolThoughtSignature, rememberToolThoughtSignature, isDebugEnabled } = require("./ToolThoughtSignatureStore");
 const { cleanJsonSchema, extractInlineDataPartsFromClaudeToolResultContent } = require("./ClaudeRequestUtils");
 
 function normalizeAntigravitySystemInstructionText(text) {
@@ -312,8 +312,8 @@ function transformClaudeRequestIn(claudeReq, projectId, options = {}) {
               sig = item.signature;
             } else if (pendingSig) {
               sig = pendingSig;
-              // 下游已经回传了该 tool_use 的签名（以 thinking.signature 的形式），本地缓存不再需要，立即清理。
-              if (item.id) deleteToolThoughtSignature(item.id);
+              // 下游回传了签名，更新缓存（而非删除）以备后续请求中签名丢失时恢复。
+              if (item.id) rememberToolThoughtSignature(item.id, sig);
             } else {
               sig = getToolThoughtSignature(item.id);
             }
