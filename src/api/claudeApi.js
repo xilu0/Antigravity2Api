@@ -185,10 +185,23 @@ class ClaudeApi {
       const now = Math.floor(Date.now() / 1000);
       const models = [];
 
-      for (const id of Object.keys(remoteModelsMap)) {
-        if (id && id.toLowerCase().includes("claude")) {
-          models.push({ id, object: "model", created: now, owned_by: "anthropic" });
-        }
+      const entries = Array.isArray(remoteModelsMap)
+        ? remoteModelsMap
+        : Object.keys(remoteModelsMap || {}).map((id) => {
+            const info = remoteModelsMap[id];
+            return typeof info === "object" ? { id, ...info } : { id };
+          });
+
+      for (const entry of entries) {
+        const rawId =
+          (typeof entry === "object" && (entry.id || entry.name || entry.model)) ||
+          (typeof entry === "string" ? entry : null);
+        if (!rawId || typeof rawId !== "string") continue;
+
+        const id = rawId.startsWith("models/") ? rawId.slice("models/".length) : rawId;
+        const lower = id.toLowerCase();
+        const ownedBy = lower.includes("claude") ? "anthropic" : lower.includes("gemini") ? "google" : "unknown";
+        models.push({ id, object: "model", created: now, owned_by: ownedBy });
       }
 
       return {

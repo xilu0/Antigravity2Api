@@ -266,6 +266,46 @@ docker compose up -d --build
     *   检查 `AG2API_PROXY_URL` 是否正确且代理软件已开启。
     *   如果是 SOCKS5 代理，确保 `socks-proxy-agent` 已安装。
 
+*   **支持的模型**:
+    *   **Claude API** 支持如下模型（可在 Claude Code 中使用 Gemini 模型）:
+        *   `claude-sonnet-4-5`
+        *   `claude-sonnet-4-5-thinking`
+        *   `claude-sonnet-4-5-20250929`
+        *   `claude-opus-4-5`
+        *   `claude-opus-4-5-thinking`
+        *   `claude-opus-4-5-20251101`
+        *   `gemini-3-pro-high`
+        *   `gemini-3-pro-low`
+        *   `gemini-3-flash`
+        *   `gemini-2.5-flash`
+        *   `gemini-2.5-flash-lite`
+        *   `gpt-oss-120b-medium（仅限于chat）`
+        *   `.claude/settings.json` 参考配置（示例）:
+            ```json
+            {
+              "ANTHROPIC_MODEL": "claude-opus-4-5-thinking",
+              "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gemini-3-flash",
+              "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-5-thinking",
+              "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-5-thinking",
+              "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            }
+            ```
+    *   **Gemini API** 支持如下模型（可在 Gemini CLI 中使用 Claude 模型）:
+        *   `claude-sonnet-4-5`
+        *   `claude-sonnet-4-5-thinking`
+        *   `claude-opus-4-5-thinking`
+        *   `gemini-3-pro-high`
+        *   `gemini-3-pro-low`
+        *   `gemini-3-flash`
+        *   `gemini-3-pro-image`
+        *   `gemini-2.5-flash`
+        *   `gemini-2.5-flash-lite`
+        *   `gpt-oss-120b-medium（仅限于chat）`
+        *   使用 Claude 的参考启动命令:
+            ```bash
+            gemini --model claude-opus-4-5-thinking
+            ```
+
 *   **OAuth 回调打不开**:
     *   授权完成后若跳到 `http://localhost:<port>/oauth-callback`，请把 `localhost:<port>` 改成当前服务地址再访问。
     *   或者复制地址栏里的完整回调链接（或仅复制 `code`），粘贴到管理页输入框中点击 “提交”。

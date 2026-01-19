@@ -176,8 +176,24 @@ function wrapRequest(clientJson, options) {
     else if (lvl === "low") mappedModelName = "gemini-3-pro-low";
   }
 
+  const modelNameLower = String(mappedModelName || "").toLowerCase();
+  const isClaudeModel = modelNameLower.includes("claude");
+
+  // Ensure generationConfig is an object for downstream mutations.
+  if (!innerRequest.generationConfig || typeof innerRequest.generationConfig !== "object") {
+    innerRequest.generationConfig = {};
+  }
+
+  // Gemini CLI custom model may send generationConfig: {} for Claude models; enable thoughts by default.
+  if (isClaudeModel && Object.keys(innerRequest.generationConfig).length === 0) {
+    innerRequest.generationConfig.thinkingConfig = {
+      includeThoughts: true,
+      thinkingBudget: 31999,
+    };
+  }
+
   // Normalize thinkingLevel -> thinkingBudget for v1internal
-  const thinkingCfg = innerRequest?.generationConfig?.thinkingConfig;
+  const thinkingCfg = innerRequest.generationConfig.thinkingConfig;
   if (thinkingCfg && typeof thinkingCfg === "object" && thinkingCfg.thinkingLevel) {
     const lvl = String(thinkingCfg.thinkingLevel).toLowerCase();
     if (lvl === "high") {
@@ -195,8 +211,31 @@ function wrapRequest(clientJson, options) {
     }
   }
 
-  // Match current behavior: force maxOutputTokens
-  innerRequest.generationConfig.maxOutputTokens = 65535;
+  // Claude models: if the client explicitly enables thoughts but doesn't provide a budget, default to 31999.
+  if (
+    isClaudeModel &&
+    thinkingCfg &&
+    typeof thinkingCfg === "object" &&
+    thinkingCfg.includeThoughts === true &&
+    (!Number.isFinite(thinkingCfg.thinkingBudget) || thinkingCfg.thinkingBudget <= 0)
+  ) {
+    thinkingCfg.thinkingBudget = 31999;
+  }
+
+  // Match current behavior: force maxOutputTokens.
+  // NOTE: Claude models reject 65535 (INVALID_ARGUMENT); use 64000 to align ClaudeRequestIn.
+  innerRequest.generationConfig.maxOutputTokens = isClaudeModel ? 64000 : 65535;
+
+  // Claude models require explicit safetySettings in practice; default to OFF thresholds.
+  if (isClaudeModel && (!Array.isArray(innerRequest.safetySettings) || innerRequest.safetySettings.length === 0)) {
+    innerRequest.safetySettings = [
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+      { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "OFF" },
+    ];
+  }
 
   // Derive requestType: image_gen for image model, web_search if googleSearch tool present, otherwise agent
   let requestType = "agent";

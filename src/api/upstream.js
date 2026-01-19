@@ -121,6 +121,7 @@ class UpstreamClient {
   getQuotaGroupFromModel(model) {
     const m = String(model || "").toLowerCase();
     if (m.includes("claude")) return "claude";
+    if (m.startsWith("gpt-")) return "claude";
     if (m.includes("gemini")) return "gemini";
     return "gemini";
   }

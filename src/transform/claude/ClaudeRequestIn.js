@@ -36,23 +36,25 @@ try {
  * Claude 模型名映射到 Gemini 模型名
  */
 function mapClaudeModelToGemini(claudeModel) {
-  const supportedModels = ["claude-opus-4-5-thinking", "claude-sonnet-4-5", "claude-sonnet-4-5-thinking"];
+  const supportedModels = [
+    "claude-opus-4-5-thinking",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-5-thinking",
+    "gemini-3-pro-high",
+    "gemini-3-pro-low",
+    "gemini-3-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gpt-oss-120b-medium",
+  ];
   if (supportedModels.includes(claudeModel)) return claudeModel;
 
   const mapping = {
     "claude-sonnet-4-5-20250929": "claude-sonnet-4-5-thinking",
-    "claude-3-5-sonnet-20241022": "claude-sonnet-4-5",
-    "claude-3-5-sonnet-20240620": "claude-sonnet-4-5",
-    "claude-opus-4": "claude-opus-4-5-thinking",
     "claude-opus-4-5-20251101": "claude-opus-4-5-thinking",
     "claude-opus-4-5": "claude-opus-4-5-thinking",
-    "claude-haiku-4": "claude-sonnet-4-5",
-    "claude-3-haiku-20240307": "claude-sonnet-4-5",
-    "claude-haiku-4-5-20251001": "claude-sonnet-4-5",
-    "gemini-2.5-flash": "gemini-2.5-flash",
-    "gemini-3-flash": "gemini-3-flash",
   };
-  return mapping[claudeModel] || "claude-sonnet-4-5";
+  return mapping[claudeModel];
 }
 
 /**
