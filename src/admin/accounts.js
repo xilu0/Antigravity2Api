@@ -59,27 +59,25 @@ async function getAccountQuota(authManager, fileName, upstreamClient) {
   const result = [];
   if (models && typeof models === "object") {
     for (const modelId in models) {
-      if (modelId.includes("gemini") || modelId.includes("claude")) {
-        const m = models[modelId];
-        const quota = m.quotaInfo || {};
-        const limit = formatRemainingFractionAsPercent(quota.remainingFraction);
-        let resetTimeMs = null;
-        let reset = "-";
-        if (quota.resetTime) {
-          const d = new Date(quota.resetTime);
-          if (Number.isFinite(d.getTime())) {
-            resetTimeMs = d.getTime();
-            reset = formatLocalDateTime(d);
-          }
+      const m = models[modelId];
+      const quota = m.quotaInfo || {};
+      const limit = formatRemainingFractionAsPercent(quota.remainingFraction);
+      let resetTimeMs = null;
+      let reset = "-";
+      if (quota.resetTime) {
+        const d = new Date(quota.resetTime);
+        if (Number.isFinite(d.getTime())) {
+          resetTimeMs = d.getTime();
+          reset = formatLocalDateTime(d);
         }
-
-        result.push({
-          model: modelId,
-          limit,
-          reset,
-          resetTimeMs,
-        });
       }
+
+      result.push({
+        model: modelId,
+        limit,
+        reset,
+        resetTimeMs,
+      });
     }
   }
 
