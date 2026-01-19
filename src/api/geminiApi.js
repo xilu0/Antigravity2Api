@@ -258,7 +258,6 @@ class GeminiApi {
           (typeof entry === "object" && (entry.id || entry.name || entry.model)) ||
           (typeof entry === "string" ? entry : null);
         if (!rawId || typeof rawId !== "string") continue;
-        if (!rawId.toLowerCase().includes("gemini")) continue;
 
         const normalizedName = rawId.startsWith("models/") ? rawId : `models/${rawId}`;
         const supportedGenerationMethods =
