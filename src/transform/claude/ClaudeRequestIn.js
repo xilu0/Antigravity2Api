@@ -53,6 +53,7 @@ function mapClaudeModelToGemini(claudeModel) {
     "claude-sonnet-4-5-20250929": "claude-sonnet-4-5-thinking",
     "claude-opus-4-5-20251101": "claude-opus-4-5-thinking",
     "claude-opus-4-5": "claude-opus-4-5-thinking",
+    "claude-haiku-4-5-20251001": "claude-sonnet-4-5",
   };
   return mapping[claudeModel];
 }
