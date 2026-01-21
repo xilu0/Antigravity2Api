@@ -167,6 +167,18 @@ async function readStreamToString(stream) {
   return out;
 }
 
+async function logStreamContent(logger, stream, label) {
+  if (!logger || typeof logger.log !== "function") return;
+  if (!stream) return;
+  try {
+    const text = await readStreamToString(stream);
+    if (text) logger.log("debug", String(label), text);
+  } catch (err) {
+    const msg = err?.message || err;
+    logger.log("warn", `Raw stream log failed for ${label}: ${msg}`);
+  }
+}
+
 async function readStreamToStringAndChunks(stream) {
   if (!stream || typeof stream.getReader !== "function") return { text: "", chunks: [], delaysMs: [] };
 
@@ -381,23 +393,25 @@ async function bufferForMcpSwitchAndMaybeRetry({
   convertedResponse,
   shouldBufferForSwitch,
   debugRequestResponse,
-  log,
-  logDebug,
-  logStreamContent,
+  logger,
   sessionState,
 }) {
   if (!shouldBufferForSwitch || !convertedResponse?.body) return null;
 
+  if (!logger || typeof logger.log !== "function") {
+    throw new Error("bufferForMcpSwitchAndMaybeRetry requires a logger with .log(level, message, meta)");
+  }
+
   const { text: buffered, chunks, delaysMs } = await readStreamToStringAndChunks(convertedResponse.body);
   if (debugRequestResponse && buffered) {
-    log("Claude Response Payload (Transformed Stream)", buffered);
+    logger.log("debug", "Claude Response Payload (Transformed Stream)", buffered);
   }
 
   if (!hasMcpSwitchSignal(buffered)) {
     return { finalResponseBody: streamFromTimedChunks(chunks, delaysMs) };
   }
 
-  log("info", `MCP switch signal detected; retrying upstream with ${mcpModel}`);
+  logger.log("info", `MCP switch signal detected; retrying upstream with ${mcpModel}`);
 
   let retryLoggedTransformed = false;
   const retryResp = await upstream.callV1Internal(method, {
@@ -409,7 +423,9 @@ async function bufferForMcpSwitchAndMaybeRetry({
         signatureSegmentStartIndex,
       });
       if (!retryLoggedTransformed) {
-        logDebug("Gemini Payload Request (Transformed, Retry MCP)", googleBody);
+        if (debugRequestResponse) {
+          logger.log("debug", "Gemini Payload Request (Transformed, Retry MCP)", googleBody);
+        }
         retryLoggedTransformed = true;
       }
       return googleBody;
@@ -424,14 +440,14 @@ async function bufferForMcpSwitchAndMaybeRetry({
       try {
         if (typeof retryResp.body.tee === "function") {
           const [logBranch, processBranch] = retryResp.body.tee();
-          logStreamContent(logBranch, `Upstream Error Raw (Stream, Retry MCP, HTTP ${retryResp.status})`);
+          logStreamContent(logger, logBranch, `Upstream Error Raw (Stream, Retry MCP, HTTP ${retryResp.status})`);
           body = processBranch;
         } else {
           const errorText = await retryResp.clone().text().catch(() => "");
-          if (errorText) log(`Upstream Error Body (Retry MCP, HTTP ${retryResp.status})`, errorText);
+          if (errorText) logger.log("debug", `Upstream Error Body (Retry MCP, HTTP ${retryResp.status})`, errorText);
         }
       } catch (e) {
-        log("warn", `Failed to log retry upstream error body: ${e.message || e}`);
+        logger.log("warn", `Failed to log retry upstream error body: ${e.message || e}`);
       }
     }
 
@@ -443,14 +459,14 @@ async function bufferForMcpSwitchAndMaybeRetry({
   if (debugRequestResponse && retryResp.body) {
     try {
       const [logBranch, processBranch] = retryResp.body.tee();
-      logStreamContent(logBranch, "Gemini Response Raw (Stream, Retry MCP)");
+      logStreamContent(logger, logBranch, "Gemini Response Raw (Stream, Retry MCP)");
       retryForTransform = new Response(processBranch, {
         status: retryResp.status,
         statusText: retryResp.statusText,
         headers: retryResp.headers,
       });
     } catch (e) {
-      log("Error teeing retry stream for logging", e.message || e);
+      logger.log("warn", "Error teeing retry stream for logging", e.message || e);
     }
   }
 
@@ -460,10 +476,10 @@ async function bufferForMcpSwitchAndMaybeRetry({
   if (debugRequestResponse && retryConverted.body) {
     try {
       const [logBranch, processBranch] = retryConverted.body.tee();
-      logStreamContent(logBranch, "Claude Response Payload (Transformed Stream, Retry MCP)");
+      logStreamContent(logger, logBranch, "Claude Response Payload (Transformed Stream, Retry MCP)");
       retryBody = processBranch;
     } catch (e) {
-      log("Error teeing retry converted stream for logging", e.message || e);
+      logger.log("warn", "Error teeing retry converted stream for logging", e.message || e);
     }
   }
 

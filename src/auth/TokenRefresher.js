@@ -2,34 +2,19 @@ const path = require("path");
 
 class TokenRefresher {
   constructor(options = {}) {
-    this.logger = options.logger || null;
+    this.logger = options.logger;
     this.refreshFn = typeof options.refreshFn === "function" ? options.refreshFn : null;
 
     this._knownAccounts = new Set();
     this._batchPromise = null;
-  }
 
-  log(title, data) {
-    if (this.logger) {
-      if (typeof this.logger === "function") {
-        return this.logger(title, data);
-      }
-      if (typeof this.logger.log === "function") {
-        return this.logger.log(title, data);
-      }
-    }
-    if (data !== undefined && data !== null) {
-      console.log(`[${title}]`, typeof data === "string" ? data : JSON.stringify(data, null, 2));
-    } else {
-      console.log(`[${title}]`);
+    if (!this.logger || typeof this.logger.log !== "function") {
+      throw new Error("TokenRefresher requires options.logger with .log(level, message, meta)");
     }
   }
 
   logAccount(action, options = {}) {
-    if (this.logger && typeof this.logger.logAccount === "function") {
-      return this.logger.logAccount(action, options);
-    }
-    this.log("account", { action, ...options });
+    return this.logger.logAccount(action, options);
   }
 
   async refresh(account) {
@@ -91,7 +76,7 @@ class TokenRefresher {
 
         fail++;
         const msg = String(value.error?.message || value.error || "unknown error").split("\n")[0].slice(0, 200);
-        this.log("account", `Token refresh failed @${value.accountName}${msg ? ` (${msg})` : ""}`);
+        this.logger.log("account", `Token refresh failed @${value.accountName}${msg ? ` (${msg})` : ""}`);
 
         const account = due[i];
         if (account && account.refreshTimer) {
@@ -109,7 +94,7 @@ class TokenRefresher {
         }
       }
 
-      this.log("account", `Token refresh done ok=${ok} fail=${fail}`);
+      this.logger.log("account", `Token refresh done ok=${ok} fail=${fail}`);
       return { ok, fail, total: due.length };
     })().finally(() => {
       this._batchPromise = null;

@@ -17,15 +17,6 @@ const debugRequestResponse = !!config.debug;
 // Proxy must be initialized before any fetch
 require("./utils/proxy");
 
-// 兼容旧的日志 API
-const log = (level, data) => {
-  if (typeof level === "string" && data !== undefined) {
-    logger.log(level, data);
-  } else {
-    logger.log("info", level, data);
-  }
-};
-
 const authManager = new AuthManager({
   authDir: path.resolve(process.cwd(), "auths"),
   logger: logger,

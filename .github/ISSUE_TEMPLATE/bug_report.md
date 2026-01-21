@@ -20,4 +20,4 @@ Please provide .env file
 Is MCP enabled? Yes or No. If yes, please specify which MCPs are enabled.
 
 **Log please!**
-If you encounter any bugs, please set AG2API_DEBUG to true, restart the service, and provide the complete logs.
+If you encounter any bugs, please set AG2API_DEBUG to true and restart the service. After reproducing the issue, please provide the complete logs.

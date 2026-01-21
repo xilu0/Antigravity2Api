@@ -20,97 +20,37 @@ const FIXED_RETRY_DELAY_MS = parseEnvNonNegativeInt("AG2API_RETRY_DELAY_MS", 120
 // First request will wait up to this long for the initial quota refresh to complete.
 const INITIAL_QUOTA_WAIT_MS = 3000;
 
-const KNOWN_LOG_LEVELS = new Set([
-  "debug",
-  "info",
-  "success",
-  "warn",
-  "error",
-  "fatal",
-  "request",
-  "response",
-  "upstream",
-  "retry",
-  "account",
-  "quota",
-  "stream",
-]);
-
-function isKnownLogLevel(value) {
-  return typeof value === "string" && KNOWN_LOG_LEVELS.has(value.toLowerCase());
-}
-
 class UpstreamClient {
   constructor(authManager, options = {}) {
     this.auth = authManager;
-    this.logger = options.logger || null;
+    this.logger = options.logger;
+
+    if (!this.logger || typeof this.logger.log !== "function") {
+      throw new Error("UpstreamClient requires options.logger with .log(level, message, meta)");
+    }
 
     this.quotaRefresher = new QuotaRefresher(this.auth, { logger: this.logger, initialWaitMs: INITIAL_QUOTA_WAIT_MS });
     this.quotaRefresher.start();
   }
 
-  // 基础日志方法（兼容旧 API）
-  log(levelOrTitle, messageOrData, meta) {
-    if (this.logger) {
-      if (typeof this.logger.log === "function") {
-        if (isKnownLogLevel(levelOrTitle)) {
-          return this.logger.log(String(levelOrTitle).toLowerCase(), messageOrData, meta);
-        }
-        return this.logger.log("info", String(levelOrTitle), messageOrData);
-      }
-      if (typeof this.logger === "function") {
-        return this.logger(levelOrTitle, messageOrData, meta);
-      }
-    }
-
-    const title = String(levelOrTitle);
-    if (meta !== undefined && meta !== null) {
-      console.log(`[${title}]`, messageOrData, meta);
-      return;
-    }
-    if (messageOrData !== undefined && messageOrData !== null) {
-      console.log(`[${title}]`, typeof messageOrData === "string" ? messageOrData : JSON.stringify(messageOrData, null, 2));
-      return;
-    }
-    console.log(`[${title}]`);
-  }
-
   // 上游调用日志
   logUpstream(action, options = {}) {
-    if (this.logger && typeof this.logger.logUpstream === "function") {
-      return this.logger.logUpstream(action, options);
-    }
-    // 回退到基础日志
-    const { method, account, model, group, attempt, maxAttempts, status, duration, error } = options;
-    const attemptStr = attempt && maxAttempts ? `[${attempt}/${maxAttempts}]` : "";
-    const message = `${action} ${attemptStr} [${group || ""}] @${account || "unknown"} ${model || ""}`;
-    this.log("upstream", { message, status, duration, error });
+    return this.logger.logUpstream(action, options);
   }
 
   // 重试日志
   logRetry(reason, options = {}) {
-    if (this.logger && typeof this.logger.logRetry === "function") {
-      return this.logger.logRetry(reason, options);
-    }
-    // 回退到基础日志
-    const { attempt, maxAttempts, delayMs, account, error, nextAction } = options;
-    this.log("retry", { reason, attempt, maxAttempts, delayMs, account, error, nextAction });
+    return this.logger.logRetry(reason, options);
   }
 
   // 配额日志
   logQuota(event, options = {}) {
-    if (this.logger && typeof this.logger.logQuota === "function") {
-      return this.logger.logQuota(event, options);
-    }
-    this.log("quota", { event, ...options });
+    return this.logger.logQuota(event, options);
   }
 
   // 错误日志
   logError(message, error, options = {}) {
-    if (this.logger && typeof this.logger.logError === "function") {
-      return this.logger.logError(message, error, options);
-    }
-    this.log("error", { message, error: error?.message || error, ...options });
+    return this.logger.logError(message, error, options);
   }
 
   getMaxAttempts() {
@@ -452,7 +392,7 @@ class UpstreamClient {
         resetDelay: retryMs,
       });
 
-      this.log("error", `🚫 Google API 429 错误详情`, errorDetails);
+      this.logger.log("error", `🚫 Google API 429 错误详情`, errorDetails);
 
       if (modelId && this.quotaRefresher) {
         const cooldownUntil = now + (retryMs != null ? Math.max(0, retryMs) : FIXED_RETRY_DELAY_MS);
@@ -585,7 +525,7 @@ class UpstreamClient {
 
   async fetchAvailableModels() {
     const { accessToken, projectId } = await this.auth.getCredentials();
-    this.log("info", `📋 获取可用模型列表 (projectId: ${projectId || "none"})`);
+    this.logger.log("info", `📋 获取可用模型列表 (projectId: ${projectId || "none"})`);
     return httpClient.fetchAvailableModels(accessToken, this.auth.apiLimiter, projectId);
   }
 
@@ -606,7 +546,7 @@ class UpstreamClient {
    */
   async countTokens(body, options = {}) {
     const inferredModel = options.model || body?.request?.model || body?.model;
-    this.log("info", `🔢 计算 Token 数量 (${inferredModel || "unknown model"})`);
+    this.logger.log("info", `🔢 计算 Token 数量 (${inferredModel || "unknown model"})`);
     return this.callV1Internal("countTokens", {
       group: options.group,
       model: inferredModel,

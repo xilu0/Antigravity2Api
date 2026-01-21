@@ -102,6 +102,16 @@ class NonStreamingProcessor {
         this.trailingSignature = null;
       }
 
+      // tool signature 载体：当上游未返回任何 thought:true part（includeThoughts 关闭），但 functionCall part 自带 thoughtSignature 时，
+      // 在 tool_use 之前用一个空 thinking 块承载签名（避免把 signature 挂到 tool_use 上）。
+      if (signature && !this.hasThinking) {
+        this.contentBlocks.push({
+          type: "thinking",
+          thinking: "",
+          signature,
+        });
+      }
+
       this.hasToolCall = true;
 
       // 优先复用上游的 functionCall.id

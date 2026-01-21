@@ -144,26 +144,6 @@ async function readGeminiSseToUnwrapped(body) {
   return merged;
 }
 
-const KNOWN_LOG_LEVELS = new Set([
-  "debug",
-  "info",
-  "success",
-  "warn",
-  "error",
-  "fatal",
-  "request",
-  "response",
-  "upstream",
-  "retry",
-  "account",
-  "quota",
-  "stream",
-]);
-
-function isKnownLogLevel(value) {
-  return typeof value === "string" && KNOWN_LOG_LEVELS.has(value.toLowerCase());
-}
-
 function headersToObject(headers) {
   const out = {};
   if (!headers || typeof headers.forEach !== "function") return out;
@@ -179,45 +159,21 @@ class GeminiApi {
   constructor(options = {}) {
     this.auth = options.authManager;
     this.upstream = options.upstreamClient;
-    this.logger = options.logger || null;
+    this.logger = options.logger;
     this.debugRequestResponse = !!options.debug;
-  }
 
-  log(levelOrTitle, messageOrData, meta) {
-    if (this.logger) {
-      if (typeof this.logger.log === "function") {
-        if (isKnownLogLevel(levelOrTitle)) {
-          return this.logger.log(String(levelOrTitle).toLowerCase(), messageOrData, meta);
-        }
-        return this.logger.log("info", String(levelOrTitle), messageOrData);
-      }
-      if (typeof this.logger === "function") {
-        return this.logger(levelOrTitle, messageOrData, meta);
-      }
+    if (!this.logger || typeof this.logger.log !== "function") {
+      throw new Error("GeminiApi requires options.logger with .log(level, message, meta)");
     }
-
-    const title = String(levelOrTitle);
-    if (meta !== undefined && meta !== null) {
-      console.log(`[${title}]`, messageOrData, meta);
-      return;
-    }
-    if (messageOrData !== undefined && messageOrData !== null) {
-      console.log(`[${title}]`, typeof messageOrData === "string" ? messageOrData : JSON.stringify(messageOrData, null, 2));
-      return;
-    }
-    console.log(`[${title}]`);
   }
 
   logDebug(title, data) {
     if (!this.debugRequestResponse) return;
-    this.log("debug", title, data);
+    this.logger.log("debug", title, data);
   }
 
   logStream(event, options = {}) {
-    if (this.logger && typeof this.logger.logStream === "function") {
-      return this.logger.logStream(event, options);
-    }
-    this.log("stream", { event, ...options });
+    return this.logger.logStream(event, options);
   }
 
   async logStreamContent(stream, label) {
@@ -233,10 +189,10 @@ class GeminiApi {
         bufferStr += chunkStr;
       }
       if (bufferStr) {
-        this.log(`${label}`, bufferStr);
+        this.logger.log("debug", String(label), bufferStr);
       }
     } catch (err) {
-      this.log("warn", `Raw stream log failed for ${label}: ${err.message || err}`);
+      this.logger.log("warn", `Raw stream log failed for ${label}: ${err.message || err}`);
     }
     return stream;
   }
@@ -360,7 +316,7 @@ class GeminiApi {
             headers: upstreamResponse.headers,
           });
         } catch (e) {
-          this.log("Error teeing Gemini native stream for logging", e.message || e);
+          this.logger.log("warn", "Error teeing Gemini native stream for logging", e.message || e);
         }
       }
 
@@ -416,7 +372,7 @@ class GeminiApi {
 
       return { status: responseForClient.status, headers: respHeaders, body: responseForClient.body };
     } catch (error) {
-      this.log("Error processing Gemini Request Raw", error.message || error);
+      this.logger.log("error", "Error processing Gemini Request Raw", error.message || error);
       return {
         status: 500,
         headers: { "Content-Type": "application/json" },

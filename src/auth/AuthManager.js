@@ -38,8 +38,12 @@ class AuthManager {
   constructor(options = {}) {
     this.accounts = [];
     this.currentAccountIndexByGroup = { claude: 0, gemini: 0 };
-    this.logger = options.logger || null;
+    this.logger = options.logger;
     this.apiLimiter = options.rateLimiter || new RateLimiter(1 * 1000);
+
+    if (!this.logger || typeof this.logger.log !== "function") {
+      throw new Error("AuthManager requires options.logger with .log(level, message, meta)");
+    }
 
     this.tokenRefresher = new TokenRefresher({
       logger: this.logger,
@@ -54,22 +58,6 @@ class AuthManager {
     this.logger = logger;
     if (this.tokenRefresher) {
       this.tokenRefresher.logger = logger;
-    }
-  }
-
-  log(title, data) {
-    if (this.logger) {
-      if (typeof this.logger === "function") {
-        return this.logger(title, data);
-      }
-      if (typeof this.logger.log === "function") {
-        return this.logger.log(title, data);
-      }
-    }
-    if (data !== undefined && data !== null) {
-      console.log(`[${title}]`, typeof data === "string" ? data : JSON.stringify(data, null, 2));
-    } else {
-      console.log(`[${title}]`);
     }
   }
 
@@ -176,11 +164,11 @@ class AuthManager {
       }
 
       if (loadedCount === 0) {
-        this.log("warn", "⚠️ 未找到任何账户");
+        this.logger.log("warn", "⚠️ 未找到任何账户");
         return;
       }
 
-      this.log("success", `✅ 已加载 ${this.accounts.length} 个账户`);
+      this.logger.log("success", `✅ 已加载 ${this.accounts.length} 个账户`);
 
       for (const account of this.accounts) {
         this.tokenRefresher.scheduleRefresh(account);
@@ -197,7 +185,7 @@ class AuthManager {
         await this.refreshAllProjectIds();
       })().catch(() => {});
     } catch (err) {
-      this.log("error", `Error loading accounts: ${err.message || err}`);
+      this.logger.log("error", `Error loading accounts: ${err.message || err}`);
     }
   }
 
@@ -269,10 +257,10 @@ class AuthManager {
       }
       fail++;
       const msg = String(r?.error?.message || r?.error || "unknown error").split("\n")[0].slice(0, 200);
-      this.log("warn", `⚠️ projectId 修复失败 @${r?.accountName || "unknown-account"}${msg ? ` (${msg})` : ""}`);
+      this.logger.log("warn", `⚠️ projectId 修复失败 @${r?.accountName || "unknown-account"}${msg ? ` (${msg})` : ""}`);
     }
 
-    this.log("info", `projectId 修复完成 ok=${ok} fail=${fail}`);
+    this.logger.log("info", `projectId 修复完成 ok=${ok} fail=${fail}`);
     return { ok, fail, total: count };
   }
 
@@ -313,7 +301,7 @@ class AuthManager {
       account.creds.projectId = projectId;
       account.creds.projectIdResolvedAt = new Date().toISOString();
       await storage.set(account.keyName, account.creds);
-      this.log("info", `✅ 获取 projectId 成功: ${projectId}`);
+      this.logger.log("info", `✅ 获取 projectId 成功: ${projectId}`);
       return projectId;
     })();
 
@@ -339,7 +327,7 @@ class AuthManager {
 
     if (account.creds.expiry_date < +new Date()) {
       const accountName = account.keyName;
-      this.log("info", `Refreshing token for [${quotaGroup}] account ${accountIndex + 1} (${accountName})...`);
+      this.logger.log("info", `Refreshing token for [${quotaGroup}] account ${accountIndex + 1} (${accountName})...`);
       await this.refreshToken(account);
     }
 
@@ -372,7 +360,7 @@ class AuthManager {
 
     if (account.creds.expiry_date < +new Date()) {
       const accountName = account.keyName;
-      this.log("info", `Refreshing token for [${logGroup}] account ${accountIndex + 1} (${accountName})...`);
+      this.logger.log("info", `Refreshing token for [${logGroup}] account ${accountIndex + 1} (${accountName})...`);
       await this.refreshToken(account);
     }
 
@@ -406,7 +394,7 @@ class AuthManager {
 
     if (account.creds.expiry_date < +new Date()) {
       const accountName = account.keyName;
-      this.log("info", `Refreshing token for [${logGroup}] account ${accountIndex + 1} (${accountName})...`);
+      this.logger.log("info", `Refreshing token for [${logGroup}] account ${accountIndex + 1} (${accountName})...`);
       await this.refreshToken(account);
     }
 
@@ -446,7 +434,7 @@ class AuthManager {
     }
     formattedData.projectId = projectId;
     formattedData.projectIdResolvedAt = new Date().toISOString();
-    this.log("info", `✅ 项目ID获取成功: ${projectId}`);
+    this.logger.log("info", `✅ 项目ID获取成功: ${projectId}`);
 
     const email = formattedData.email;
 
@@ -471,7 +459,7 @@ class AuthManager {
         if (accEmail && accEmail === email) {
           targetKeyName = acc.keyName;
           existingAccountIndex = i;
-          this.log("info", `Found existing account for ${email}, updating...`);
+          this.logger.log("info", `Found existing account for ${email}, updating...`);
           break;
         }
       }
@@ -489,7 +477,7 @@ class AuthManager {
           oldKeyNameToDelete = targetKeyName;
           targetKeyName = newKeyName;
           this.accounts[existingAccountIndex].keyName = newKeyName;
-          this.log("info", `Renamed credentials to ${newKeyName}`);
+          this.logger.log("info", `Renamed credentials to ${newKeyName}`);
         }
       }
     } else {
@@ -507,7 +495,7 @@ class AuthManager {
       try {
         await storage.delete(oldKeyNameToDelete);
       } catch (e) {
-        this.log("warn", `Failed to delete old key "${oldKeyNameToDelete}": ${e.message || e}`);
+        this.logger.log("warn", `Failed to delete old key "${oldKeyNameToDelete}": ${e.message || e}`);
       }
     }
 
@@ -542,9 +530,9 @@ class AuthManager {
 
     this.tokenRefresher.scheduleRefresh(targetAccount);
 
-    this.log("info", "✅ OAuth authentication successful! Credentials saved.");
-    this.log("info", "ℹ️  To add more accounts, run: npm run add (or: node src/server.js --add)");
-    this.log("info", "🚀 You can now use the API.");
+    this.logger.log("info", "✅ OAuth authentication successful! Credentials saved.");
+    this.logger.log("info", "ℹ️  To add more accounts, run: npm run add (or: node src/server.js --add)");
+    this.logger.log("info", "🚀 You can now use the API.");
   }
 
   async refreshToken(account) {
@@ -572,12 +560,12 @@ class AuthManager {
           }
           data.projectId = projectId;
           data.projectIdResolvedAt = new Date().toISOString();
-          this.log("info", `✅ 刷新时获取 projectId 成功: ${projectId}`);
+          this.logger.log("info", `✅ 刷新时获取 projectId 成功: ${projectId}`);
         }
 
         account.creds = data;
         await storage.set(account.keyName, data);
-        this.log("info", `✅ Token refreshed for ${account.keyName}`);
+        this.logger.log("info", `✅ Token refreshed for ${account.keyName}`);
 
         this.tokenRefresher.scheduleRefresh(account);
 

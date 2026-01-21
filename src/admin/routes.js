@@ -15,7 +15,7 @@ async function handleAdminRoute(req, parsedUrl, { authManager, upstreamClient, c
   const apiKey = extractApiKey(req.headers);
   if (!isApiKeyValid(apiKey, config)) {
     if (logger) {
-      logger.warn(`⛔ Admin API unauthorized access from ${req.socket.remoteAddress}`);
+      logger.log("warn", `⛔ Admin API unauthorized access from ${req.socket.remoteAddress}`);
     }
     return jsonResponse(401, { error: { message: "Invalid API Key" } });
   }

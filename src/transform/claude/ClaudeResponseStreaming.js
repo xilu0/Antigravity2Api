@@ -236,8 +236,16 @@ class PartProcessor {
 
       // 对下游（Claude SSE）：签名应跟随 thinking 的 signature_delta，而非挂到 tool_use 上。
       // 若签名出现在 functionCall part 上，尽量把它作为“thinking 的签名”输出在 tool_use 之前。
-      if (signature && this.state.blockType === StreamingState.BLOCK_THINKING) {
-        this.state.signatures.store(signature);
+      if (signature) {
+        if (this.state.blockType === StreamingState.BLOCK_THINKING) {
+          this.state.signatures.store(signature);
+        } else {
+          // tool signature 载体：在 tool_use 之前用一个空 thinking 块输出 signature_delta
+          this.state.startBlock(StreamingState.BLOCK_THINKING, { type: "thinking", thinking: "" });
+          this.state.emitDelta("thinking_delta", { thinking: "" });
+          this.state.emitDelta("signature_delta", { signature });
+          this.state.endBlock();
+        }
       }
 
       this.processFunctionCall(part.functionCall, sigForToolCache);

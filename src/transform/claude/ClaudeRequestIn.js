@@ -286,7 +286,24 @@ function transformClaudeRequestIn(claudeReq, projectId, options = {}) {
               if (item.id && item.name) {
                 toolIdToName.set(item.id, item.name);
               }
-              clientContent.parts.push({ text: buildMcpToolCallXml(item.name, item.input || {}) });
+
+              // 下游如果已经回传了该 tool_use 的签名（tool_use.signature 或紧邻 thinking.signature），
+              // 则可以清理本地缓存，避免 tool_thought_signatures.json 长期膨胀。
+              const pendingSig = shouldForwardThoughtSignatures ? pendingThoughtSignature : null;
+              const itemSig = typeof item.signature === "string" && item.signature ? item.signature : null;
+              if (item.id && (itemSig || pendingSig)) {
+                deleteToolThoughtSignature(item.id);
+              }
+              // 消费 pending：无论是否使用（例如 tool_use 已自带签名），都认为已到达“thinking 之后的第一个输出 part”。
+              if (pendingSig) pendingThoughtSignature = null;
+
+              const part = { text: buildMcpToolCallXml(item.name, item.input || {}) };
+              if (itemSig && shouldForwardThoughtSignatures) {
+                part.thoughtSignature = itemSig;
+              } else if (pendingSig && shouldForwardThoughtSignatures) {
+                part.thoughtSignature = pendingSig;
+              }
+              clientContent.parts.push(part);
               sawNonThinkingContent = true;
               previousWasToolResult = false;
               continue;

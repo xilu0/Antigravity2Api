@@ -16,7 +16,11 @@ const DEFAULT_REFRESH_INTERVAL_MS = QUOTA_REFRESH_S * 1000;
 class QuotaRefresher {
   constructor(authManager, options = {}) {
     this.auth = authManager;
-    this.logger = options.logger || null;
+    this.logger = options.logger;
+
+    if (!this.logger || typeof this.logger.log !== "function") {
+      throw new Error("QuotaRefresher requires options.logger with .log(level, message, meta)");
+    }
 
     this.refreshIntervalMs = Number.isFinite(options.refreshIntervalMs)
       ? options.refreshIntervalMs
@@ -31,31 +35,6 @@ class QuotaRefresher {
     this._refreshPromise = null;
     this._initialRefreshPromise = null;
     this._initialRefreshDone = false;
-  }
-
-  log(levelOrTitle, messageOrData, meta) {
-    if (this.logger) {
-      if (typeof this.logger.log === "function") {
-        return this.logger.log(String(levelOrTitle).toLowerCase(), messageOrData, meta);
-      }
-      if (typeof this.logger === "function") {
-        return this.logger(levelOrTitle, messageOrData, meta);
-      }
-    }
-
-    const title = String(levelOrTitle);
-    if (meta !== undefined && meta !== null) {
-      console.log(`[${title}]`, messageOrData, meta);
-      return;
-    }
-    if (messageOrData !== undefined && messageOrData !== null) {
-      console.log(
-        `[${title}]`,
-        typeof messageOrData === "string" ? messageOrData : JSON.stringify(messageOrData, null, 2)
-      );
-      return;
-    }
-    console.log(`[${title}]`);
   }
 
   sleep(ms) {
@@ -81,7 +60,7 @@ class QuotaRefresher {
         }
         await this.refreshAllAccountQuotas();
       } catch (e) {
-        this.log("error", "额度刷新失败", e?.message || e);
+        this.logger.log("error", "额度刷新失败", e?.message || e);
       }
     })().finally(() => {
       this._initialRefreshDone = true;
@@ -93,7 +72,7 @@ class QuotaRefresher {
       try {
         await this.refreshAllAccountQuotas();
       } catch (e) {
-        this.log("error", "额度刷新失败", e?.message || e);
+        this.logger.log("error", "额度刷新失败", e?.message || e);
       }
     };
 
@@ -306,7 +285,7 @@ class QuotaRefresher {
           const message = String(item?.error?.message || item?.error || "unknown error")
             .split("\n")[0]
             .slice(0, 200);
-          this.log("quota", `额度刷新失败 @${accountKey}${message ? ` (${message})` : ""}`);
+          this.logger.log("quota", `额度刷新失败 @${accountKey}${message ? ` (${message})` : ""}`);
           continue;
         }
 
@@ -314,7 +293,7 @@ class QuotaRefresher {
         this.updateQuotaCacheFromModels(item.accountKey, item.models, now);
       }
 
-      this.log("quota", `额度刷新完成 ok=${ok} fail=${fail}`);
+      this.logger.log("quota", `额度刷新完成 ok=${ok} fail=${fail}`);
       return { ok, fail, total: results.length };
     })().finally(() => {
       this._refreshPromise = null;
