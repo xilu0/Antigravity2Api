@@ -3,7 +3,7 @@
  * Log Error Analysis Script
  * Analyzes 400 and 429 errors in Antigravity2Api log files
  *
- * Usage: node scripts/analyze-log-errors.js <log-file>
+ * Usage: node scripts/analyze-log-errors.js log/2026-01-19_17-31-52.log
  */
 
 const fs = require('fs');
