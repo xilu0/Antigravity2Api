@@ -511,28 +511,67 @@ function createLogger(options = {}) {
 
   /**
    * 记录 HTTP 响应
+   * @param {number} status - HTTP 状态码
+   * @param {object} options
+   * @param {number} [options.duration] - 请求耗时 (ms)
+   * @param {number} [options.size] - 响应大小 (bytes)
+   * @param {string} [options.requestId] - 请求 ID
+   * @param {object} [options.headers] - 响应头 (debug 模式)
+   * @param {object} [options.body] - 响应体 (debug 模式)
+   * @param {string} [options.model] - 模型名称
+   * @param {string} [options.account] - 账号名称
+   * @param {object} [options.usage] - Token 使用信息 (Gemini usageMetadata)
+   * @param {object} [options.quota] - 账号剩余 quota 信息 { remainingPercent, resetTime }
    */
   const logResponse = (status, options = {}) => {
-    const { duration, size, requestId, headers, body } = options;
+    const { duration, size, requestId, headers, body, model, account, usage, quota } = options;
     const reqIdStr = requestId ? ` ${Colors.dim}[${requestId}]${Colors.reset}` : "";
-    
+
     const statusColor = status >= 500 ? Colors.red : status >= 400 ? Colors.yellow : Colors.green;
     const statusIcon = status >= 500 ? "❌" : status >= 400 ? "⚠️" : "✅";
-    
+
     let metaInfo = [];
     if (duration) metaInfo.push(`⏱️  ${formatDuration(duration)}`);
     if (size) metaInfo.push(`📦 ${formatBytes(size)}`);
-    
+
+    // 模型信息
+    if (model) metaInfo.push(`🤖 ${Colors.magenta}${model}${Colors.reset}`);
+
+    // 账号信息 (带 quota)
+    if (account) {
+      let accountStr = `👤 ${Colors.cyan}${account}${Colors.reset}`;
+      if (quota && quota.remainingPercent != null) {
+        const pct = quota.remainingPercent.toFixed(1);
+        const pctColor = quota.remainingPercent > 50 ? Colors.green : quota.remainingPercent > 20 ? Colors.yellow : Colors.red;
+        accountStr += ` ${pctColor}(${pct}%)${Colors.reset}`;
+      }
+      metaInfo.push(accountStr);
+    }
+
+    // Token 使用信息 (Gemini usageMetadata 格式)
+    if (usage) {
+      const usageParts = [];
+      if (usage.promptTokenCount != null) usageParts.push(`in:${usage.promptTokenCount}`);
+      if (usage.candidatesTokenCount != null) usageParts.push(`out:${usage.candidatesTokenCount}`);
+      if (usage.cachedContentTokenCount != null && usage.cachedContentTokenCount > 0) {
+        usageParts.push(`cache:${usage.cachedContentTokenCount}`);
+      }
+      if (usage.thoughtsTokenCount != null && usage.thoughtsTokenCount > 0) {
+        usageParts.push(`think:${usage.thoughtsTokenCount}`);
+      }
+      if (usageParts.length > 0) metaInfo.push(`📊 ${usageParts.join("/")}`);
+    }
+
     log("response", `${statusIcon} ${statusColor}${Colors.bold}${status}${Colors.reset}${reqIdStr} ${Colors.dim}${metaInfo.join(" | ")}${Colors.reset}`);
-    
+
     if (headers) {
       log("debug", "响应头", headers);
     }
-    
+
     if (body) {
       log("debug", "响应体", body);
     }
-    
+
     console.log(`${createSeparator("═", 70, Colors.green)}\n`);
   };
 

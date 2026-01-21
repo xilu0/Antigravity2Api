@@ -303,6 +303,10 @@ class ClaudeApi {
         transformOutOptions.maxContextTokens = maxContextTokens;
       }
 
+      // 创建 usageHolder 用于捕获 Gemini usageMetadata
+      const usageHolder = { usage: null };
+      transformOutOptions.usageHolder = usageHolder;
+
       let loggedTransformed = false;
       const response = await this.upstream.callV1Internal(method, {
         model: modelForQuota,
@@ -419,6 +423,24 @@ class ClaudeApi {
         }
       }
 
+      // 提取 response._meta 中的账号信息（由 upstream 添加）
+      const responseMeta = response._meta || {};
+      const accountName = responseMeta.account || null;
+      const upstreamModel = responseMeta.model || modelForQuota;
+
+      // 构建 onComplete 回调，供 server.js 在响应结束后调用
+      const onComplete = () => {
+        return {
+          model: upstreamModel,
+          account: accountName,
+          usage: usageHolder.usage,
+          getQuota: () => {
+            if (!accountName || !upstreamModel) return null;
+            return this.upstream?.quotaRefresher?.getAccountQuota?.(upstreamModel, accountName) || null;
+          },
+        };
+      };
+
       return {
         status: convertedResponse.status,
         headers: {
@@ -427,6 +449,7 @@ class ClaudeApi {
           Connection: "keep-alive",
         },
         body: finalResponseBody,
+        onComplete,
       };
     } catch (error) {
       this.logger.log("error", "Error processing Claude request", error.message || error);

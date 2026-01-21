@@ -290,6 +290,12 @@ async function handleNonStreamingResponse(response, options = {}) {
   let json = await response.json();
   json = json.response || json;
 
+  // 捕获 usageMetadata 供回调使用
+  const usageHolder = options?.usageHolder;
+  if (usageHolder && json?.usageMetadata) {
+    usageHolder.usage = json.usageMetadata;
+  }
+
   // v1internal grounding(web search) -> Claude 的 server_tool_use/web_search_tool_result 结构
   const candidate = json?.candidates?.[0] || null;
   const groundingMetadata = candidate?.groundingMetadata || null;

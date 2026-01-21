@@ -366,18 +366,29 @@ const server = http.createServer(async (req, res) => {
     // Claude messages
     if (parsedUrl.pathname === "/v1/messages" && req.method === "POST") {
       const body = await parseJsonBody(req);
-      logger.log("info", `🤖 Claude 消息请求`, { 
-        model: body?.model, 
+      logger.log("info", `🤖 Claude 消息请求`, {
+        model: body?.model,
         stream: !!body?.stream,
         messageCount: body?.messages?.length,
         requestId,
       });
       const result = await claudeApi.handleMessages(body);
-      logger.logResponse(result.status, {
+      await writeResponse(res, result);
+
+      // 响应结束后调用 onComplete 获取完整信息并记录日志
+      const completionInfo = typeof result.onComplete === "function" ? result.onComplete() : null;
+      const logOptions = {
         requestId,
         duration: Date.now() - startTime,
-      });
-      return await writeResponse(res, result);
+      };
+      if (completionInfo) {
+        logOptions.model = completionInfo.model;
+        logOptions.account = completionInfo.account;
+        logOptions.usage = completionInfo.usage;
+        logOptions.quota = typeof completionInfo.getQuota === "function" ? completionInfo.getQuota() : null;
+      }
+      logger.logResponse(result.status, logOptions);
+      return;
     }
 
     logger.log("warn", `❓ 未找到路由`, { method: req.method, path: req.url, requestId });

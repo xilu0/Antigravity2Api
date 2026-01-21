@@ -410,6 +410,9 @@ async function handleStreamingResponse(response, options = {}) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
 
+  // 用于捕获最终 usageMetadata 的 holder（供外部回调使用）
+  const usageHolder = options?.usageHolder;
+
   const stream = new ReadableStream({
     async start(controller) {
       const state = new StreamingState(encoder, controller);
@@ -421,6 +424,8 @@ async function handleStreamingResponse(response, options = {}) {
       if (isMcpXmlEnabled() && mcpXmlToolNames.length > 0) {
         state.mcpXmlParser = createMcpXmlStreamParser(mcpXmlToolNames);
       }
+      // 保存 usageHolder 引用到 state，供 processSSELine 使用
+      state.usageHolder = usageHolder;
       const processor = new PartProcessor(state);
 
       try {
@@ -533,6 +538,11 @@ async function processSSELine(line, state, processor) {
     // 检查是否结束
     const finishReason = candidate?.finishReason;
     if (finishReason) {
+      // 捕获最终 usageMetadata 供回调使用
+      if (state.usageHolder && rawJSON.usageMetadata) {
+        state.usageHolder.usage = rawJSON.usageMetadata;
+      }
+
       if (!state.webSearchMode) {
         if (state.mcpXmlParser) {
           const rest = state.mcpXmlParser.flush();

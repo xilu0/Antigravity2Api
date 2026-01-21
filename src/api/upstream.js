@@ -346,6 +346,8 @@ class UpstreamClient {
           status: response.status,
           duration,
         });
+        // Attach meta info for logging
+        response._meta = { account: accountName, model: modelId, group: quotaGroup };
         return response;
       }
 
@@ -372,6 +374,8 @@ class UpstreamClient {
           duration,
           error: errorDetails,
         });
+        // Attach meta info for logging
+        response._meta = { account: accountName, model: modelId, group: quotaGroup };
         return response;
       }
 
@@ -402,6 +406,7 @@ class UpstreamClient {
       if (maxAttempts === 1) {
         if (retryMs != null && retryMs > 5000) {
           // Long cooldown: do not wait, just return the 429 as-is.
+          response._meta = { account: accountName, model: modelId, group: quotaGroup };
           return response;
         }
 
@@ -452,6 +457,7 @@ class UpstreamClient {
             status: retryResp.status,
             duration: retryDuration,
           });
+          retryResp._meta = { account: accountName, model: modelId, group: quotaGroup };
           return retryResp;
         }
 
@@ -469,10 +475,12 @@ class UpstreamClient {
             status: retryResp.status,
             duration: retryDuration,
           });
+          retryResp._meta = { account: accountName, model: modelId, group: quotaGroup };
           return retryResp;
         }
 
         lastResponse = retryResp;
+        retryResp._meta = { account: accountName, model: modelId, group: quotaGroup };
         return retryResp;
       }
 

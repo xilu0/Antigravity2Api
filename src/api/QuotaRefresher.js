@@ -182,6 +182,29 @@ class QuotaRefresher {
     return DEFAULT_CONTEXT_LIMITS[key] || null;
   }
 
+  /**
+   * Get quota info for a specific model and account
+   * @param {string} modelId - Model ID
+   * @param {string} accountKey - Account key (e.g., "email@gmail.com.json")
+   * @returns {{ remainingPercent: number | null, resetTime: string | null } | null}
+   */
+  getAccountQuota(modelId, accountKey) {
+    const key = String(modelId || "").trim();
+    const accKey = String(accountKey || "").trim();
+    if (!key || !accKey) return null;
+
+    const perModel = this.modelQuotaByAccount.get(key);
+    if (!perModel) return null;
+
+    const quota = perModel.get(accKey);
+    if (!quota) return null;
+
+    return {
+      remainingPercent: quota.remainingPercent,
+      resetTime: quota.resetTime,
+    };
+  }
+
   async fetchModelsByAccountIndex(accountIndex) {
     const idx = Number.isInteger(accountIndex) ? accountIndex : Number.parseInt(String(accountIndex), 10);
     if (!Number.isInteger(idx) || idx < 0) {
